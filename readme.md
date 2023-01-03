@@ -182,7 +182,7 @@ of separating tokens.
 
 ## Operators and Ponctuation <a name="ponctuation"/>
 
-The following is a list of all 41 operators and ponctuation tokens
+The following is a list of all 40 operators and ponctuation tokens
 in the language. All of them, including `-=`, `+=`, etc, are treated
 as a single token.
 
@@ -190,9 +190,8 @@ as a single token.
     ;    =    [    ]     (    )    {    }
     ,    :    |    ->    .    *    ?    &
     ::   ==   !=   >     <    <=   >=   +
-    -    ..   *    /     %    @    ~    .
+    -    ..   *    /     %    @    ~    <->
     ^    \    -=   +=    *=   /=   ..=  %=
-    <->
 ```
 
 # Grammatical Elements <a name="grammar"/>
@@ -216,7 +215,7 @@ of valid anu file names:
 anu.anu
 m0.anu
 module.metadata.anu
-0_g3tg1d.anu
+_g3tg1d.anu
 m.1234569.anu
 ```
 
@@ -236,6 +235,9 @@ Note: keywords can't be used as the name of a module
 New types declared in separate modules are always different,
 that is: `A::T` is different from `B::T` if both are not aliases.
 
+The entry point of a module is a procedure named `main`, with type
+`proc[] nil`, `proc[**i8] nil` or `proc[**i8] i8`.
+
 ## Header <a name="header"/>
 
 ```
@@ -247,6 +249,14 @@ A module header contains a series of module relations,
 these define what is imported and exported from this module.
 Module relations can only appear in the top of a file and
 nowhere else.
+
+The module system architects module relations by using both
+exclusive imports and exclusive exports, in other words,
+you can choose what symbols to export from a module and 
+you can choose what to import from a module.
+
+Importing a module twice is an error, both with `from ... import ...`
+and `import ...`. Exporting the same symbol twice is also an error.
 
 ### Import <a name="import"/>
 
@@ -264,8 +274,14 @@ available by using the `::` operator. Example:
 ```
 import IO
 
-const myWrite = IO::Writer
+const myWrite = IO::Write
 const myRead  = IO::Read
+```
+
+It's possible to rename the module when importing:
+
+```
+import IO as io
 ```
 
 ### FromImport <a name="fromimport"/>
@@ -274,10 +290,58 @@ const myRead  = IO::Read
 FromImport = "from" id "import" AliasList
 ```
 
+The `from ... import ...` construct imports names from a module
+directly into global scope, making it unnecessary to use the `::`
+operator to access exported symbols. The module being imported
+must live in the same folder as the current module. Example:
+
+```
+from IO import Read, Write
+
+const myWrite = Write
+const myRead = Read
+```
+
+The module is not directly accessible, that is: `IO`
+is not present in the global namespace, only the chosen symbols.
+It's also possible to rename symbols when importing:
+
+```
+from IO import Read as myRead, Write as myWrite
+```
+
 ### Export <a name="export"/>
 
 ```
 Export = "export" ("all" | AliasList)
+```
+
+The `export ...` construct makes a series of symbols public 
+to other modules, that is: it exports them. Example:
+
+```
+export Pi, Tau
+const Pi = 3
+const Tau = 2*Pi
+```
+
+It's also possible to export `all` symbols without enumerating
+them one by one, the following example has the same module
+interface as the previous one.
+
+```
+export all
+const Pi = 3
+const Tau = 2*Pi
+```
+
+It's also possible to rename symbols when exporting using the `as`
+keyword:
+
+```
+export Pi as Tau, Tau as Pi # mischievous
+const Pi = 3
+const Tau = 2*Pi
 ```
 
 ## Body <a name="body"/>
@@ -286,6 +350,9 @@ Export = "export" ("all" | AliasList)
 Body = (Symbol ";"?)*
 Symbol = Constant | Procedure | Type
 ```
+
+The body of a module is made of named symbols declared
+possibly out of order. Cycles are only allowed in procedures and types.
 
 ### Procedure <a name="procedure"/>
 
@@ -299,12 +366,53 @@ Decl = id TypeAnnot?
 TypeAnnot = ":" TypeExpr
 ```
 
+A procedure is a special kind of constant that defines
+a procedure interface and it's implementation. A procedure
+may have zero or multiple arguments, but always a single return.
+
+It's possible to declare a procedure by first specifying a type,
+then naming the arguments, or by specifying each argument with
+it's respective type, the following procedures have identical types:
+
+```
+type Binary as proc[int, int] int
+
+proc Add:Binary [a, b] do a + b;
+proc Sub[a:int, b:int] int do a - b;
+```
+
+It's also possible to omit certain parts of a procedure declaration,
+the following procedure has type: `proc[]nil`
+
+```
+proc main do print["hello"]
+```
+
+If the return type of a procedure is not specified, the value of the
+expression is discarded, and the type defaults to `nil`. Example:
+
+```
+proc F do
+  for range 0 to 10 do
+    print["Hello\n"];
+```
+
+If `print` has type `proc[*i8]nil` the whole expression has type `*nil`,
+but since the value is discarded, `F` has type `proc[]nil`
+
 ### Constant <a name="constant"/>
 
 ```
 Constant = "const" id TypeAnnot? "=" Expr
 TypeAnnot = ":" TypeExpr
 ```
+
+Constants are immutable global symbols initialized with static values.
+In other words, the initial value may only contain deterministic operations
+capable of being computed at compile time.
+
+It's invalid to create a constant that uses blocks, branching, loops, 
+mutation, addressing, returns, procedure calls and/or array/map accessing.
 
 ### Type <a name="type"/>
 
@@ -317,7 +425,7 @@ TypeCreation = "is" TypeExpr
 The type declaration can be used to create
 aliases to types and new types. An alias is _identical_
 to the underlying type, while an new type is only _equivalent_
-to it's underlying type.
+to it's underlying type. 
 
 Given the following types:
 
@@ -331,6 +439,24 @@ The following propositions are true:
  - `A` is _equivalent_ to `int` and `B`
  - `A` is not _identical_ to `int` or `B`
  - `B` is _identical_ to `int`
+
+Aliases cannot be recursive, while new types can be recursive as long
+as there's a level of indirection between itself. Given the following types:
+
+```
+type A as {.value int .next &A}
+type B is {.value int .next &B}
+type C is {.value int .next C}
+type D is string -> D
+type E is *E
+type F is &F
+```
+
+Type `A` is invalid: it's a recursive alias.
+Type `C` is invalid: it's a recursive new type *without*
+a level of indirection between itself.
+Type `B`, `D`, `E`, `F` are valid: they are a recursive new type with
+a level of indirection between itself.
 
 Anu has only a few basic types:
 
@@ -558,7 +684,7 @@ type Something enum One is {int int},
                     Two
 ```
 
-Desugared to:
+Can be desugared to:
 
 ```
 type One is {int int}
@@ -593,15 +719,18 @@ meaning `a + b + c` will be the same as `(a + b) + c`.
 Precedence is defined directly in the grammar,
 but can be viewed separatedly in the following table:
 
-| Precedence | Operators                                    | Description          |
-|:----------:|:--------------------------------------------:|:--------------------:|
-|     0      | `or`                                         | Logical OR           |
-|     1      | `and`                                        | Logical AND          |
-|     2      | `=`, `!=`, `>`, `>=`, `<`, `<=`, `is`, `has` | Comparison and Order |
-|     3      | `+`, `-`, `..`                               | Sum and Special      |
-|     4      | `*`, `/`, `%`                                | Multiplicative       |
-|     5      | `&`, `@`, `not`, `~`                         | Prefix (Unary)       |
-|     6      | `.`, `[]`, `:`, `^`                          | Suffix               |
+| Precedence | Operators                                    |
+|:----------:|:--------------------------------------------:|
+|     0      | `or`                                         |
+|     1      | `and`                                        |
+|     2      | `=`, `!=`, `>`, `>=`, `<`, `<=`, `is`, `has` |
+|     3      | `+`, `-`, `..`                               |
+|     4      | `*`, `/`, `%`                                |
+|     5      | `&`, `@`, `not`, `~`                         |
+|     6      | `.`, `[]`, `:`, `^`                          |
+
+Where `[]` means procedure call or indexing, `^` means bubble-up, 
+`:` means type annotation and `.` means field access.
 
 ### Binary Operators <a name="binaryoperators"/>
 ### Prefix <a name="prefix"/>
@@ -725,6 +854,13 @@ New = "new" TypeAnnot? "[" Expr "," Expr ","? "]"
 
 # Type System <a name="typesystem"/>
 ## Type Canonicalization <a name="typecanonicalization"/>
+
+ - _Identical_ options inside a sum type are canonicalized into a single option
+ - Inside a sum type `void` is discarded during canonicalization
+ - A product type with a single field is canonicalized to that field's type
+ - Inside a product type `nil` is discarded during canonicalization.
+ - An option is canonicalized into a sum `?T` becomes `nil | T`
+
 ## Type Identity <a name="typeidentity"/>
 
 Before two types can be compared for identity, they must first
