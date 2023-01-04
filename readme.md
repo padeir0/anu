@@ -48,31 +48,32 @@ proc main do print["Hello, World!\n"];
     5. [Factor](#factor)
         1. [NestedExpr](#nestedexpr)
         2. [Block](#block)
-        3. [ProcLit](#proclit)
-        4. [ProductLit](#productlit)
-        5. [ArrayLit](#arraylit)
-        6. [For](#for)
+        3. [ProcLit](#proclit) \*
+        4. [ProductLit](#productlit) \*
+        5. [ArrayLit](#arraylit) \*
+        6. [For](#for) \*
             1. [Conditional](#conditional)
             2. [Iterative](#iterative)
             3. [Range](#range)
-        7. [Switch](#switch)
+        7. [Switch](#switch) \*
             1. [ValueSwitch](#valueswitch)
             2. [TypeSwitch](#typeswitch)
-        8. [If](#if)
+        8. [If](#if) \*
         9. [EarlyReturn](#earlyreturn)
-        10. [Let](#let)
+        10. [Let](#let) \*
         11. [Set](#set)
+        12. [New](#new)
 4. [Type System](#typesystem)
     1. [Type Canonicalization](#typecanonicalization)
     2. [Type Identity](#typeidentity)
     3. [Type Equivalence](#typeequivalence)
-    4. [Assignable](#assignable)
-    5. [Castable](#castable)
-    6. [Addressable](#addressable)
-    7. [Uniqueness of References](#uniquenessofreferences)
+    4. [Assignable](#assignable) \*
+    5. [Castable](#castable) \*
+    6. [Addressable](#addressable) \*
+    7. [Uniqueness of References](#uniquenessofreferences) \*
 5. [Misc]
     1. [Full Grammar](#fullgrammar)
-    2. [Full Type Rules](#fullinferencerules)
+    2. [Full Type Rules](#fullinferencerules) \*
     3. [Future](#future)
 6. [Examples]
     1. [Rock, Paper, Scissors](#rockpaperscissors)
@@ -183,7 +184,7 @@ of separating tokens.
 
 ## Operators and Ponctuation <a name="ponctuation"/>
 
-The following is a list of all 41 operators and ponctuation tokens
+The following is a list of all 39 operators and ponctuation tokens
 in the language. All of them, including `-=`, `+=`, etc, are treated
 as a single token.
 
@@ -191,9 +192,8 @@ as a single token.
     ;    =    [    ]     (    )    {    }
     ,    :    |    ->    .    *    ?    &
     ::   ==   !=   >     <    <=   >=   +
-    -    ..   *    /     %    @    ~    <->
-    ^    \    -=   +=    *=   /=   ..=  %=
-    $
+    -    ..   *    /     %    @    ~    $
+    ^    \    -=   +=    *=   ..=  <->
 ```
 
 # Grammatical Elements <a name="grammar"/>
@@ -371,6 +371,9 @@ TypeAnnot = ":" TypeExpr
 A procedure is a special kind of constant that defines
 a procedure interface and it's implementation. A procedure
 may have zero or multiple arguments, but always a single return.
+All arguments of a procedure are immutable and the compiler
+may choose to pass them as values or references depending
+whether he can be sure that's safe or not.
 
 It's possible to declare a procedure by first specifying a type,
 then naming the arguments, or by specifying each argument with
@@ -732,19 +735,23 @@ Where `[]` means procedure call or indexing, `^` means bubble-up,
 
  - `or` and `and` are logical or and logical and respectively, they always
 operate on two `bool`s and the output is also `bool`.
- - `=` and `!=` are equality and inequality, they work on _comparable_ types and
-the output is a `bool`.
- - `>`, `>=`, `<` and `<=` are greater, greater or equals, less, less or equals
-respectivelly. They work on _orderable_ types and the output is a `bool`.
- - `is` is sum identity operator, it takes a sum and a type (that must be an option of the sum)
-and outputs a `bool`.
- - `+` and `-` are the binary sum and subtraction operators, they work on integers
-and the output is of the same type of it's operands.
- - `..` array concat operator, it takes two arrays of identical types and output
-a new array with type identical to the operands. Since it copies the contents of the arrays,
-it's subject to move semantics.
- - `*`, `/` and `%` are the multiplication, division and remainder operators. They work on integers
-and the output is of the same type of it's operands.
+ - `=` and `!=` are equality and inequality, they work on _comparable_ 
+types and the output is a `bool`.
+ - `>`, `>=`, `<` and `<=` are greater, greater or equals, less,
+less or equals respectivelly. They work on _orderable_ types and the
+ output is a `bool`.
+ - `is` is sum identity operator, it takes a sum and a type 
+(that must be an option of the sum) and outputs a `bool`.
+ - `+` and `-` are the binary sum and subtraction operators, 
+they work on integers and the output is of the same type of it's operands.
+ - `..` array concat operator, it takes two arrays of identical types and
+outputs a new array with type identical to the operands. 
+Since it copies the contents of the arrays, it's subject to move semantics.
+ - `*` is the multiply operator. It works on integers and the output is of
+ the same type of it's operands.
+ - `/` and `%` are the division and remainder operators, they work on numbers
+and return an option of the types being operated on: `1 / 1` has type `?int`
+(this means division by zero must be explicitly checked)
 
 ### Prefix <a name="prefix"/>
 ```
@@ -946,22 +953,49 @@ Factor
 | New
 ```
 
+Factors are the operands of expressions,
+though they may contain subexpressions themselves.
+
 ### NestedExpr <a name="nestedexpr"/>
 ```
 NestedExpr = "(" Expr ")"
 ```
+
+Parenthesis may be used to nest expressions inside one another,
+they may also be used to specify precedence order: `a + (b + c)`
+evaluates `b + c` first.
+
+It is also important to disambiguate dangling-elses.
+
 ### Block <a name="block"/>
 ```
 Block = "begin" ExprSemicolon* "end"
 ExprSemicolon = Expr ";"?
 ```
+
+A block expression is a way to perform operations
+and discard their values, the type of a block expression
+is the type of the last expression or `nil`.
+
+```
+proc F[] int do
+  begin
+    1
+  end
+```
+
+Expressions inside a block are evaluated top-down, and blocks
+create a separated lexical scope.
+
 ### ProductLit <a name="productlit"/>
+
 ```
 ProductLit = ComplexLitBody
 ComplexLitBody = "{" (":" TypeExpr)? FieldList? "}"
 FieldList = Field ("," Field)* ","?
 Field = Expr ("=" Expr)?
 ```
+
 ### ArrayLit <a name="arraylit"/>
 ```
 ArrayLit = "\" ComplexLitBody
@@ -1007,6 +1041,21 @@ Else = "else" Expr
 ```
 EarlyReturn = "return" Expr
 ```
+
+A return expression performs a (possibly early) return
+from a procedure, the type of the expression must be
+*assignable* to the return type of the procedure.
+The output type of this expression is `void`.
+
+Note that the following procedure is valid since
+it's supposed return type `void | int`
+gets canonicalized to `int`:
+
+```
+proc F[] int do
+  return 1;
+```
+
 ### Let <a name="let"/>
 ```
 Let = "let" LetDeclList ("in" Expr)?
@@ -1015,15 +1064,177 @@ LetDecl = VarList "=" Expr
 VarList = Annotated ("," Annotated)* ","?
 Annotated = id TypeAnnot?
 ```
+
 ### Set <a name="set"/>
 ```
 Set = "set" ExprList assignOp Expr
-assignOp = "=" | "-=" | "+=" | "*=" | "/=" | "..=" | "%=" | "<->" | "remove"
+assignOp = "=" | "-=" | "+=" | "*=" | "..=" | "<->" | "remove"
 ```
+
+All mutation in anu uses the `set` expression,
+the expression on the right side must be *assignable* to the
+expression on the left, however, the `<->` operator requires
+that both sides are *identical*.
+There are multiple operators available to a `set` expression,
+in all cases, the right side always evaluates before the left side.
+
+The following expressions can be the target of an assignment:
+
+ - Mutable variable, eg. `set a = 1`
+ - Indexing of a mutable variable, eg. `set a[0] = 1`
+ - Look-up of a mutable variable, eg. `set a["key"] = 1`
+ - Field access of a mutable variable, eg. `set a.a = 1`
+ - A dereferencing operation, eg. `set @a = 1`
+
+`=` copies the value from the right side to the left side,
+if the right side is a product, the left side may contain more than
+one expression, where the tuple is destructured and each value is assigned
+in order to the left operands.
+
+```
+proc main do
+  begin
+    let a = 1;
+    set a = 2; # a is now 2
+
+    let c = 0
+    let b = {1, 2}
+
+    set a, c = b # destructures 'b' and assigns 'a' and 'c'
+  end
+```
+
+Note that order matters:
+
+```
+proc main do
+  begin
+    let a = 0, b = {1, 2};
+    set a, a = b # a is now equals 2
+  end
+```
+
+The output of an `set ... = ...` assignment is the value of the right side.
+
+The expression assign operators `+=`, `-=` and `*=`
+works with numeric values by updating the left side after the operation.
+They can be desugared:
+
+ - `set a += 1` is equivalent to `set a = a + 1`
+ - `set a -= 1` is equivalent to `set a = a - 1`
+ - `set a *= 1` is equivalent to `set a = a * 1`
+
+The `..=` operator appends an array to the end of the other.
+The arrays must be of *identical* types, the output is also *identical*.
+
+ - `set a ..= \{1, 2, 3}` is equivalent to `set a = a .. \{1, 2, 3}`
+
+Since `..` makes a copy, `..=` is also subject to moving semantics,
+specially `set a ..= a` will not work if the type of `a` contains
+references.
+
+The `set ... remove ...` expression removes an item from a map and
+returns the item. `set a remove "key"` removes the value corresponding
+with the key `"key"` from the map `a` and returns it's value.
+
+```
+proc main do
+  begin
+    let a = \{"key" = 1, "abracadabra" = 2}
+    let b = set a remove "key" # 'b' is equal to 1
+  end
+```
+
+The swap operator `<->` swaps the contents of two *assignable* expressions.
+The right side still evaluates first, and both sides evaluate only once.
+
+```
+set a <-> b
+```
+
+This is specially important when swapping items of arrays or maps,
+since using destructuring would invalidate the whole object, not only
+the item. `set a, b = {b, a}` will not work if you substitute `a` or `b`
+for an indexing or look-up expression.
+
+Note that `/=` and `%=` are missing for good cause, they output a type
+different from it's operands: `1 / 2` is of type `?int` not `int`.
+
+If the left side of a `set` expression is an array indexing, the output 
+will be an option indicating whether the indexing was sucessful,
+in the following example, `b` is `nil` when `a[0]` is out of bounds:
+
+```
+let b :?int = set a[0] = 1;
+```
+
+If the left side contains multiple expressions and one of them is
+an array indexing, the output will still be a simple option,
+but the compiler must warn the user. The compiler should also warn
+the user if he is discarding the option.
+
 ### New <a name="new"/>
 ```
-New = "new" TypeAnnot? "[" Expr "," Expr ","? "]"
+New = "new" TypeAnnot "[" FieldList? "]"
 ```
+
+The `new` construct allows the user to prealocate an array or map
+by setting it's `cap` and `length`, or to alocate a type with the
+hability to check for Out of Memory conditions. `new` always
+returns an optional, since it may fail to alocate.
+
+For arrays, the user may set `cap` or `length` with a number,
+if `length` is present, it's necessary to specify an `init` value,
+that will be used to initialize every item in the array, 
+this value may not be a reference (since it would create multiple copies).
+If both `cap` and `length` are present, `length` must be smaller or equals
+to `cap`. If `length` is not present, it defaults to `0`. The `init`
+must be a type *castable* to the base type of the array.
+
+```
+proc main do
+  begin
+		# if making arrays by 'length', you must specify the 'init'
+		let buff0: ?*i8 = new:*i8[length = 512, init = 0]
+
+		# however, if making by 'cap', you can omit the 'init',
+		# since the length will default to 0
+		let buff1: ?*i8 = new:*i8[cap = 512]
+
+		# if you specify both, 'cap' must be bigger than 'length'
+		# and 'init' must be set
+		let buff2: ?*i8 = new:*i8[cap = 512, length = 16, init = 0]
+  end
+```
+
+For maps, only `cap` may be set, this prealocates the map
+but doesn't insert any values.
+
+```
+proc main do
+  begin
+		let mymap: ?(string->int) = new:string->int[cap = 512]
+  end
+```
+
+For other types, `new` serves only as a checked alocation,
+first it tries to alocate a region of memory, then sets
+with the value you passed it. The value must be *castable*
+to the type specified in `new`
+
+```
+type BigDataStructure is {
+	int int int int int int
+}
+
+proc main do
+  begin
+		let a: ?BigDataStructure = new:BigDataStructure[{1, 1, 1, 1, 1, 1}]
+  end
+```
+
+Using `new` with scalar values should return a warning,
+since scalar values are likely to be stack alocated.
 
 # Type System <a name="typesystem"/>
 ## Type Canonicalization <a name="typecanonicalization"/>
@@ -1205,7 +1416,7 @@ LetDecl = VarList "=" Expr
 VarList = Annotated ("," Annotated)* ","?
 Annotated = id TypeAnnot?
 
-New = "new" TypeAnnot? "[" Expr "," Expr ","? "]"
+New = "new" TypeAnnot "[" FieldList? "]"
 
 keyword = "import" | "from"    | "export" | "proc" | "const"  | "type"   |
           "begin"  | "end"     | "is"     | "or"   | "and"    | "not"    |
@@ -1214,7 +1425,7 @@ keyword = "import" | "from"    | "export" | "proc" | "const"  | "type"   |
           "set"    | "as"      | "to"     | "then" | "range"  | "nil"    |
           "new"    | "remove"  | "void"   | "true" | "false"
 
-assignOp = "=" | "-=" | "+=" | "*=" | "/=" | "..=" | "%=" | "<->" | "remove"
+assignOp = "=" | "-=" | "+=" | "*=" | "..=" | "<->" | "remove"
 
 id = ~(keyword ~letter) letter alnum*
 nil = "nil"
@@ -1234,10 +1445,11 @@ whitespace = " " | "\t"
 # Future <a name="future"/>
 
  - FFI
- - Syntax sugar for chaining (without creating closures): `a \> f() \> g()` or `a \ f() \ g()`
- - Some form of reflection that returns stack trace information
- - Floats
+ - Floats?
+ - Bitwise operators
  - Rank 1 polymorphism and inference
+ - Some form of reflection that returns stack trace information
+ - Syntax sugar for chaining (without creating closures): `a \> f[] \> g[]`
 
 # Examples <a name="examples"/>
 ## Rock, Paper, Scissors <a name="rockpaperscissors"/>
