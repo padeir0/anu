@@ -35,8 +35,8 @@ proc main do print["Hello, World!\n"];
             4. [Procedure Types](#proceduretype)
             5. [Array Types](#arraytype)
             6. [Map Type](#maptype)
-            7. [Enum](#enum)
-            8. [Optional](#optional)
+            7. [Optional](#optional)
+            8. [Enum](#enum)
     4. [Expr](#expr)
         1. [Binary Operators](#binaryoperators)
         2. [Prefix](#prefix)
@@ -66,9 +66,10 @@ proc main do print["Hello, World!\n"];
     1. [Type Canonicalization](#typecanonicalization)
     2. [Type Identity](#typeidentity)
     3. [Type Equivalence](#typeequivalence)
-    4. [Type Assignability](#typeassignability)
-    5. [Type Castability](#typecastability)
-    6. [Uniqueness of References](#uniquenessofreferences)
+    4. [Assignable](#assignable)
+    5. [Castable](#castable)
+    6. [Addressable](#addressable)
+    7. [Uniqueness of References](#uniquenessofreferences)
 5. [Misc]
     1. [Full Grammar](#fullgrammar)
     2. [Full Type Rules](#fullinferencerules)
@@ -113,7 +114,7 @@ begin   end      is      or    and     not
 do      for      if      each  in      switch 
 case    default  elseif  else  return  let    
 set     as       to      then  range   nil    
-new     has      remove  true  false   void   
+new     remove   true    false void   
 ```
 
 ## Int <a name="int"/>
@@ -182,7 +183,7 @@ of separating tokens.
 
 ## Operators and Ponctuation <a name="ponctuation"/>
 
-The following is a list of all 40 operators and ponctuation tokens
+The following is a list of all 41 operators and ponctuation tokens
 in the language. All of them, including `-=`, `+=`, etc, are treated
 as a single token.
 
@@ -192,6 +193,7 @@ as a single token.
     ::   ==   !=   >     <    <=   >=   +
     -    ..   *    /     %    @    ~    <->
     ^    \    -=   +=    *=   /=   ..=  %=
+    $
 ```
 
 # Grammatical Elements <a name="grammar"/>
@@ -507,7 +509,7 @@ Example of sums:
 
 ```
 type Number is i8 | i16 | i32 | i64 | int
-type Json   is nil | float | string | string->Json | *Json
+type Json   is nil | int | string | string->Json | *Json
 ```
 
 #### Products <a name="products"/>
@@ -699,19 +701,13 @@ ExprList = Expr ("," Expr)* ","?
 Expr = And ("or" And)*
 And = Comp ("and" Comp)*
 Comp = Sum (compOp Sum)*
-compOp = "==" | "!=" | ">" | ">=" | "<" | "<=" | "is" | "has"
+compOp = "==" | "!=" | ">" | ">=" | "<" | "<=" | "is"
 Sum = Mult (sumOp Mult)*
 sumOp = "+" | "-" | ".."
 Mult = UnaryPrefix (multOp UnaryPrefix)*
 multOp = "*" | "/" | "%"
 UnaryPrefix = Prefix* UnarySuffix
 UnarySuffix = Factor Suffix*
-Prefix = "&" | "@" | "not" | "~"
-Suffix
-= PropertyAccess
-| CallOrIndex
-| TypeAnnot
-| TypeReturn
 ```
 
 Associativity is always left-to-right,
@@ -723,23 +719,134 @@ but can be viewed separatedly in the following table:
 |:----------:|:--------------------------------------------:|
 |     0      | `or`                                         |
 |     1      | `and`                                        |
-|     2      | `=`, `!=`, `>`, `>=`, `<`, `<=`, `is`, `has` |
+|     2      | `=`, `!=`, `>`, `>=`, `<`, `<=`, `is`        |
 |     3      | `+`, `-`, `..`                               |
 |     4      | `*`, `/`, `%`                                |
-|     5      | `&`, `@`, `not`, `~`                         |
-|     6      | `.`, `[]`, `:`, `^`                          |
+|     5      | `.`, `[]`, `:`, `^`                          |
+|     6      | `&`, `@`, `not`, `~`, `$`                    |
 
 Where `[]` means procedure call or indexing, `^` means bubble-up, 
 `:` means type annotation and `.` means field access.
 
 ### Binary Operators <a name="binaryoperators"/>
+
+ - `or` and `and` are logical or and logical and respectively, they always
+operate on two `bool`s and the output is also `bool`.
+ - `=` and `!=` are equality and inequality, they work on _comparable_ types and
+the output is a `bool`.
+ - `>`, `>=`, `<` and `<=` are greater, greater or equals, less, less or equals
+respectivelly. They work on _orderable_ types and the output is a `bool`.
+ - `is` is sum identity operator, it takes a sum and a type (that must be an option of the sum)
+and outputs a `bool`.
+ - `+` and `-` are the binary sum and subtraction operators, they work on integers
+and the output is of the same type of it's operands.
+ - `..` array concat operator, it takes two arrays of identical types and output
+a new array with type identical to the operands. Since it copies the contents of the arrays,
+it's subject to move semantics.
+ - `*`, `/` and `%` are the multiplication, division and remainder operators. They work on integers
+and the output is of the same type of it's operands.
+
 ### Prefix <a name="prefix"/>
+```
+Prefix = "&" | "@" | "not" | "~" | "$"
+```
+
+ - `&` is the address-of operator, it takes any _addressable_ expression and returns a reference to that value.
+The output type is a reference of the expression type. It's subject to move semantics.
+ - `@` is the value-at or dereferencing operator, it takes a reference and returns the base type.
+It's subject to move semantics.
+ - `not` is the logical operator not, it takes a bool and returns a bool.
+ - `~` is the unary minus operator, it takes a single integer and outputs an integer.
+ - `$` is the stringify operator, it takes a value of any type and prints a
+string representation of it's values.
+
 ### Suffix <a name="suffix"/>
+
+```
+Suffix
+= PropertyAccess
+| CallOrIndex
+| TypeAnnot
+| TypeReturn
+```
 
 #### Call/Index <a name="call"/>
 
 ```
 CallOrIndex = "[" FieldList "]"
+```
+
+If the factor is a procedure, array or map,
+or a reference to array or map (automatic dereferencing),
+square brackets `[]` can be used to invoke a few operations.
+
+For procedures `[]` performs a procedure call, with each
+parameter corresponding to a formal parameter of the procedure.
+Since parameters sometimes have names, they may be used to better annotate
+a procedure call, if however the procedure is being passed as a value,
+named parameters are not available, in this case the compiler must
+return an error.
+
+The parameters of a procedure must be of *identical* type to the formal
+parameters defined in the procedure declaration, if named parameters
+are not used, the order is important, and each parameter must match
+the parameters in the declaration in order. If named parameters are used,
+each parameter must be of *identical* type to the respectively named
+formal parameter in the procedure declaration. You can't mix and match
+ordered and named parameters.
+
+```
+proc Add[a:int, b:int] int do a + b;
+proc Square[a:int] int do a * a;
+proc main do
+  begin
+    # ordered parameters
+    let a = Square[2]
+    let b = Add[a, a]
+
+    # named parameters
+    let c = Square[a = 2]
+    let d = Add[a = c, b = c]
+  end
+```
+
+The type of a procedure call is the type of the return of the procedure,
+the output value of procedure calls are not addressable.
+
+For arrays, `[]` performs either indexing or slicing.
+Indexing takes a single parameter of numerical type, and returns
+the element at that position, whereas slicing takes two numerical
+arguments: the start index and the number of elements to slice.
+
+The output type of an indexing operation is the an option of base type of the array,
+(if the array has type `*i8` then indexing it will result in `?i8`)
+and the output type for slicing operations are *identical* to the original
+array's type. Slicing creates a new copy of a section of the array,
+and as such is subject to moving semantics.
+
+```
+proc main do
+  begin
+    let a = \{1, 2, 3, 4}
+    let b = a[0] # 1
+    set b = a[1] # 2
+    let c = a[0, 2] # \{1, 2}
+    let d = a[0, a.length] # \{1, 2, 3, 4}
+  end
+```
+
+For maps, `[]` performs a map look-up, it takes an expression
+of type *identical* to the map's key type, and the output
+is an option of the map's value type. (if a map has type `string -> int`
+performing a map lookup will result in `?int`).
+
+```
+proc main do
+  begin
+    let a = \{"a" -> 0, "b" -> 1}
+    let b :?int = a["a"]
+    if b is nil then fatal["key not found"]
+  end
 ```
 
 #### Property Access <a name="propertyaccess"/>
@@ -748,11 +855,77 @@ CallOrIndex = "[" FieldList "]"
 PropertyAccess = "." id
 ```
 
+If the type is a product, map or array, 
+or reference to a product, map or array (automatic dereferencing),
+`.` can be used to access a field inside it.
+
+For products, the field must exist inside it, if the product has named
+fields, the names must match those given by the user, however, if
+fields are unamed, they default to one or more letters in alphabetical order 
+(`product.a`, `product.b`,... , `product.z`, `product.aa`, ...).
+
+```
+proc main do
+  begin
+    let a = {1, 2, 3}
+    let b = a.a # 1
+    set b = a.b # 2
+    set b = a.c # 3
+  end
+```
+
+For arrays and maps, there are only two fields `length` and `cap`, 
+that returns an `int` representing respectivelly the length and capacity
+of the array or map.
+
 #### Bubble Up <a name="bubbleup"/>
 
 ```
 TypeReturn = "^" TypeExpr
 ```
+
+If an expression is of a sum type, the `^` operator can be used to
+perform an early return of unwanted values. It returns any value
+that is different from the type specified and returns a value of that
+type. The type specified must be an option inside the sum.
+
+```
+proc PrintFile[file:*i8] ?IO::Error do
+  begin
+    let a = IO::Open[file, IO::ReadOnly]^&File
+    let contents = IO::ReadAll[a]^*i8
+    IO::Print[contents]
+    return nil
+  end
+```
+
+The above code can be desugared into:
+
+```
+proc PrintFile[file:*i8] ?IO::Error do
+  begin
+    let a = switch type IO::Open[file, IO::ReadOnly] as v
+            case IO:Error then return v
+            default v
+    let contents = switch type IO::ReadAll[a]^*i8 as v
+                   case IO:Error then return v
+                   default v
+    IO::Print[contents]
+    return nil
+  end
+```
+
+#### Type Annotation <a name="typeannot"/>
+
+```
+TypeAnnot = ":" TypeExpr
+```
+
+The `:` is used for type annotation or casting. If the expression
+has type *identical* to the annotated type, then no operation is performed,
+if the type is not *identical* but is *castable*, then the value is casted
+to the annotated type. If the type is neither *identical* nor *castable*
+then it's an invalid type annotation.
 
 ## Factor <a name="factor"/>
 
@@ -961,14 +1134,14 @@ ExprList = Expr ("," Expr)* ","?
 Expr = And ("or" And)*
 And = Comp ("and" Comp)*
 Comp = Sum (compOp Sum)*
-compOp = "==" | "!=" | ">"~("="|"-") | ">=" | "<"~("="|"-") | "<=" | "is" | "has"
+compOp = "==" | "!=" | ">"~("="|"-") | ">=" | "<"~("="|"-") | "<=" | "is"
 Sum = Mult (sumOp Mult)*
 sumOp = "+" | "-" | ".."
 Mult = UnaryPrefix (multOp UnaryPrefix)*
 multOp = "*" | "/" | "%"
 UnaryPrefix = Prefix* UnarySuffix
 UnarySuffix = Factor Suffix*
-Prefix = "&" | "@" | "not" | "~"
+Prefix = "&" | "@" | "not" | "~" | "$"
 Suffix
 = PropertyAccess
 | CallOrIndex
@@ -1039,7 +1212,7 @@ keyword = "import" | "from"    | "export" | "proc" | "const"  | "type"   |
           "do"     | "for"     | "if"     | "each" | "in"     | "switch" |
           "case"   | "default" | "elseif" | "else" | "return" | "let"    |
           "set"    | "as"      | "to"     | "then" | "range"  | "nil"    |
-          "new"    | "has"     | "remove" | "void" | "true"   | "false"
+          "new"    | "remove"  | "void"   | "true" | "false"
 
 assignOp = "=" | "-=" | "+=" | "*=" | "/=" | "..=" | "%=" | "<->" | "remove"
 
@@ -1060,8 +1233,11 @@ whitespace = " " | "\t"
 
 # Future <a name="future"/>
 
+ - FFI
  - Syntax sugar for chaining (without creating closures): `a \> f() \> g()` or `a \ f() \ g()`
  - Some form of reflection that returns stack trace information
+ - Floats
+ - Rank 1 polymorphism and inference
 
 # Examples <a name="examples"/>
 ## Rock, Paper, Scissors <a name="rockpaperscissors"/>
