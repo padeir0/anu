@@ -69,7 +69,8 @@ proc main do print["Hello, World!\n"];
     4. [Assignable](#assignable) \*
     5. [Castable](#castable) \*
     6. [Addressable](#addressable) \*
-    7. [Uniqueness of References](#uniquenessofreferences) \*
+    7. [Moving Semantics](#movingsemantics) \*
+    8. [Freeing Semantics](#freeingsemantics) \*
 5. [Misc]
     1. [Full Grammar](#fullgrammar)
     2. [Full Type Rules](#fullinferencerules) \*
@@ -1318,7 +1319,234 @@ and the values are of *identical* types
 
 ## Type Assignability <a name="typeassignability"/>
 ## Type Castability <a name="typecastability"/>
-## Uniqueness of References <a name="uniquenessofreferences"/>
+## Moving semantics <a name="movingsemantics"/>
+
+Moving semantics guarantee that all references in Anu are the sole owner
+of the objects they point to.
+Whenever a reference is copied it's ownership is moved and the contents
+of it's previous container becomes invalid. Whenever a variable has it's
+address taken, the variable becomes invalid.
+
+```
+proc main do
+  begin
+    let a = 0
+    #        v moves 'a'
+    let b = &a
+
+    #       v error: use of moved variable
+    let c = a + 1;
+  end
+```
+
+For containers, it is possible to restore the validity of their
+references:
+
+```
+proc main do
+  begin
+    let a = 0
+    #        v moves 'a'
+    let b = &a
+
+    # v 'F' takes the ownership of 'b's references
+    F[b]
+
+    let c = 1
+    #        v moves 'c'
+    set b = &c
+    #   ^ 'b' becomes valid again
+  end
+
+proc F[&int] do nil
+```
+
+If any branch of a procedure moves a reference, after the branch the
+reference is invalid:
+
+```
+proc main do
+  begin
+    let a = 0
+    if true then F[&a]
+
+    #       v error: use of possibly moved variable
+    let b = a + 1;
+  end
+
+proc F[&int] do nil;
+```
+
+For loops, if any variable is invalid at the end of the loop expression
+it's also invalid in the beginning of the loop:
+
+```
+proc main do
+  begin
+    let a = 0
+    #             v error: variable was moved on previous loop iteration
+    for true do F[&a]
+  end
+
+proc F[&int] do nil;
+```
+
+References are also moved when creating array, map or
+product literals and passing parameters to procedures.
+
+
+```
+proc main do
+  begin
+    let a = 0, b = 1
+    let z = \{&a, &b}
+    #          ^   ^ both are moved
+  end
+```
+
+If *any reference* from inside an array or
+map is moved, the whole array/map is invalid until a full copy or reset,
+since it is impossible in the general case to determine whether arbitrary
+indexes inside an array or map have been restored.
+
+```
+proc main do
+  begin
+    let a = 0, b = 1, c = 2
+    let z = \{&a, &b}
+    F[z[0]]
+    #   ^ moves reference from inside 'z'
+
+    set z[0] = &c
+    #        ^ error: setting item of array with moved references
+
+    let d = 3
+    set z = \{&d}
+    #   ^ now 'z' is valid again
+  end
+
+proc F[&int] do nil;
+```
+
+The swap operator `<->` is specially useful in those cases, you can swap
+a reference from inside an array/map with another reference or value,
+and keep the validity of the whole collection.
+
+```
+proc main do
+  begin
+    let a = 0, b = 1
+    let z = \{:*?&int &a, &b}
+
+    let c : ?&int = nil
+    swap z[0] <-> c;
+    # now 'c' contains the reference you want to work with
+    # and 'z[0]' contains 'nil'
+    
+    F[c]
+    # ^ moves the contents of 'c'
+    # but 'z' is still valid
+  end
+
+proc F[?&int] do nil;
+```
+
+The `..` and `..=` operators are also subject to moving semantics
+since they create a copy of the array:
+
+```
+proc main do
+  begin
+    let a = 0, aa = 1, aaa = 2
+    #                 v   v    v they are moved
+	  let b :*&int = \{&a, &aa, &aaa}
+
+	  #       v the contents of 'b' are moved
+	  set b = b .. b;
+	  #            ^ error: use of container with moved references
+
+    set b ..= b;
+    #   ^ error: use of container with moved references
+  end
+```
+
+In a `switch` expresion, aliasing borrows the variable or the contents
+of the container. If either the alias or the container
+is moved, both are moved. Aliasing shadows the original variable or
+container name, so it still has uniqueness.
+
+```
+proc main do
+  begin
+    let a = 0
+    let z :int | &int = &a
+
+    switch type z as x
+    #                ^ borrows the contents of 'z'
+    case &int then F[x]
+    #                ^ moves the contents of both 'z' and 'x'
+    case int then nil
+
+    let abc = z
+    #         ^ error: use of container with moved references
+  end
+
+proc F[&int] do nil;
+```
+
+For `for each ... in ...` loops, aliasing also borrows the variable
+or the contents of the container. But if the alias is moved, the whole
+collection becomes invalid. Aliasing shadows the collection being
+iterated on.
+
+```
+proc main do
+  begin
+    let a = 0, b = 1, c = 2
+    let z = \{&a, &b, &c} 
+
+    #                v error: use of container with moved references
+    for each item in z do
+      F[item]
+  end
+
+proc F[&int] do nil;
+```
+
+Since the item is mutable (and actually changes the item in the array)
+the following is a valid way to operate on references inside a `for each`:
+
+```
+proc main do
+  begin
+    let a = 0, b = 1, c = 2
+    let z = \{:*?&int &a, &b, &c}
+
+    # frees all objects referenced by 'z'
+    for each item in z do
+      begin
+        let v :?&int = nil
+        set item <-> v
+        F[v]
+      end
+
+    # 'z' is still valid here
+  end
+
+proc F[?&int] do nil;
+```
+
+### Freeing Semantics <a name="freeingsemantics"/>
+
+```
+proc main do
+  begin
+    let myInt = 0, mySecondInt = 1
+    let a = \{&myInt, &mySecondInt}
+  	set a = a[0, 1] # this should free 'mySecondInt' internally
+  end
+```
+
 
 # Misc <a name="misc"/>
 
@@ -1481,6 +1709,7 @@ whitespace = " " | "\t"
 
 # Future <a name="future"/>
 
+ - Fix type syntax: products with commas `{int, int}` and allow unions inside `{T|U, T}`
  - FFI
  - Floats?
  - Bitwise operators
