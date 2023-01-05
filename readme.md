@@ -48,21 +48,20 @@ proc main do print["Hello, World!\n"];
     5. [Factor](#factor)
         1. [NestedExpr](#nestedexpr)
         2. [Block](#block)
-        3. [ProcLit](#proclit) \*
-        4. [ProductLit](#productlit) \*
-        5. [ArrayLit](#arraylit) \*
-        6. [For](#for) \*
+        3. [Product Literal](#productliteral)
+        4. [Array Literal](#arrayliteral) \*
+        5. [For](#for) \*
             1. [Conditional](#conditional)
             2. [Iterative](#iterative)
             3. [Range](#range)
-        7. [Switch](#switch) \*
+        6. [Switch](#switch) \*
             1. [ValueSwitch](#valueswitch)
             2. [TypeSwitch](#typeswitch)
-        8. [If](#if) \*
-        9. [EarlyReturn](#earlyreturn)
-        10. [Let](#let) \*
-        11. [Set](#set)
-        12. [New](#new)
+        7. [If](#if) \*
+        8. [EarlyReturn](#earlyreturn)
+        9. [Let](#let) \*
+        10. [Set](#set)
+        11. [New](#new)
 4. [Type System](#typesystem)
     1. [Type Canonicalization](#typecanonicalization)
     2. [Type Identity](#typeidentity)
@@ -122,7 +121,7 @@ new     remove   true    false void
 
 ```
 hexDigits = '0'|'1'|'2'|'3'|'4'|'5'|'6'|'7'|'8'|'9'|
-	    'A'|'B'|'C'|'D'|'E'|'F'|'a'|'b'|'c'|'d'|'e'|'f'.
+      'A'|'B'|'C'|'D'|'E'|'F'|'a'|'b'|'c'|'d'|'e'|'f'.
 binDigits = '0'|'1'.
 numEnding = 'ss'|'s'|'l'|'ll'.
 number := decimal | hexadecimal | binary.
@@ -184,16 +183,16 @@ of separating tokens.
 
 ## Operators and Ponctuation <a name="ponctuation"/>
 
-The following is a list of all 39 operators and ponctuation tokens
+The following is a list of all 38 operators and ponctuation tokens
 in the language. All of them, including `-=`, `+=`, etc, are treated
 as a single token.
 
 ```
     ;    =    [    ]     (    )    {    }
-    ,    :    |    ->    .    *    ?    &
+    ,    :    |    ->    .    ?    &    \
     ::   ==   !=   >     <    <=   >=   +
     -    ..   *    /     %    @    ~    $
-    ^    \    -=   +=    *=   ..=  <->
+    ^    -=   +=    *=   ..=  <->
 ```
 
 # Grammatical Elements <a name="grammar"/>
@@ -428,8 +427,8 @@ TypeCreation = "is" TypeExpr
 ```
 
 The type declaration can be used to create
-aliases to types and new types. An alias is _identical_
-to the underlying type, while an new type is only _equivalent_
+aliases to types and new types. An alias is *identical*
+to the underlying type, while an new type is only *equivalent*
 to it's underlying type. 
 
 Given the following types:
@@ -441,9 +440,9 @@ type B as int
 
 The following propositions are true:
 
- - `A` is _equivalent_ to `int` and `B`
- - `A` is not _identical_ to `int` or `B`
- - `B` is _identical_ to `int`
+ - `A` is *equivalent* to `int` and `B`
+ - `A` is not *identical* to `int` or `B`
+ - `B` is *identical* to `int`
 
 Aliases cannot be recursive, while new types can be recursive as long
 as there's a level of indirection between itself. Given the following types:
@@ -452,7 +451,7 @@ as there's a level of indirection between itself. Given the following types:
 type A as {.value int .next &A}
 type B is {.value int .next &B}
 type C is {.value int .next C}
-type D is string -> D
+type D is *i8 -> D
 type E is *E
 type F is &F
 ```
@@ -482,14 +481,14 @@ Sums are made by using the Or type operator: `|`.
 At any given time, the underlying type of a sum is always one (and only one)
 of it's possibilities.
 
- - Two sum types are _equivalent_ if they contain _identical_ types, regardless of order
- - _Identical_ options inside a sum type are treated as a single option
+ - Two sum types are *equivalent* if they contain *identical* types, regardless of order
+ - *Identical* options inside a sum type are treated as a single option
  - Inside a sum type `void` is not considered
 
 ```
 T | T == T
 T | nil == nil | T
-(int | string) | nil == nil | (string | int)
+(int | *i8) | nil == nil | (*i8 | int)
 void | T == T
 
 T | U != T | Z
@@ -512,7 +511,7 @@ Example of sums:
 
 ```
 type Number is i8 | i16 | i32 | i64 | int
-type Json   is nil | int | string | string->Json | *Json
+type Json   is nil | int | *i8 | *i8->Json | *Json
 ```
 
 #### Products <a name="products"/>
@@ -527,8 +526,8 @@ the name of fields can be specified by the `.` operator,
 otherwise the default is latin letters in alphabetical order:
 `product.a`, `product.b`, ...,`product.z`, `product.aa`, 
 
- - Two product types are _equivalent_ if they have _identical_ types layed out in the same order.
- - A product type with a single field is _identical_ to that field's type.
+ - Two product types are *equivalent* if they have *identical* types layed out in the same order.
+ - A product type with a single field is *identical* to that field's type.
  - Inside a product type `nil` is not considered.
 
 ```
@@ -566,7 +565,7 @@ Ref = "&"
 
 References are constructed with the address-of operator `&`.
 
- - Two reference types are _equivalent_ if they have _identical_ base types.
+ - Two reference types are *equivalent* if they have *identical* base types.
 
 All references point to mutable objects and the object is guarantee
 to have a single reference to it. Aliasing references is forbidden,
@@ -591,9 +590,9 @@ TypeArguments = "[" TypeExprList? "]"
 Procedure types are built using the `proc` keyword, followed by
 the argument types and a single return type.
 
- - Two procedural types are _equivalent_ if they have the same number
- of _identical_ parameters layed out in the same order,
- and the return types are _identical_
+ - Two procedural types are *equivalent* if they have the same number
+ of *identical* parameters layed out in the same order,
+ and the return types are *identical*
 
 ```
 proc[T] T == proc[T] T
@@ -611,7 +610,7 @@ ArrayType = "*"
 
 Array types are made by using the repetition operator `*`.
 
- - Two array types are _equivalent_ if they have _identical_ base types
+ - Two array types are *equivalent* if they have *identical* base types
 
 ```
 *T == *T
@@ -629,12 +628,12 @@ Map = TypeFactor ("->" TypeFactor)*
 
 Maps are built by using the association operator `->`.
 
- - Two map types are _equivalent_ if the keys are of _identical_ types,
-and the values are of _identical_ types
+ - Two map types are *equivalent* if the keys are of *identical* types,
+and the values are of *identical* types
 
 ```
-string -> int == string -> int
-string -> int != int -> string
+*i8 -> int == *i8 -> int
+*i8 -> int != int -> *i8
 ```
 
 The key of a map cannot be a reference or procedure type, it has to be
@@ -653,10 +652,10 @@ Option types are made by using the maybe operator `?`.
 Options are canonicalized into sums:
 
 ```
-?string  => nil | string
-??string => nil | (nil | string)
-?&string => nil | &string
-&?string => &(nil | string)
+?int  => nil | int
+??int => nil | (nil | int)
+?&int => nil | &int
+&?int => &(nil | int)
 ?&*int   => &*int | nil
 ```
 
@@ -735,37 +734,38 @@ Where `[]` means procedure call or indexing, `^` means bubble-up,
 
  - `or` and `and` are logical or and logical and respectively, they always
 operate on two `bool`s and the output is also `bool`.
- - `=` and `!=` are equality and inequality, they work on _comparable_ 
+ - `=` and `!=` are equality and inequality, they work on *comparable* 
 types and the output is a `bool`.
  - `>`, `>=`, `<` and `<=` are greater, greater or equals, less,
-less or equals respectivelly. They work on _orderable_ types and the
+less or equals respectivelly. They work on *orderable* types and the
  output is a `bool`.
  - `is` is sum identity operator, it takes a sum and a type 
 (that must be an option of the sum) and outputs a `bool`.
  - `+` and `-` are the binary sum and subtraction operators, 
 they work on integers and the output is of the same type of it's operands.
- - `..` array concat operator, it takes two arrays of identical types and
+ - `..` is the array concatenation operator, it takes two arrays of identical types and
 outputs a new array with type identical to the operands. 
 Since it copies the contents of the arrays, it's subject to move semantics.
  - `*` is the multiply operator. It works on integers and the output is of
  the same type of it's operands.
  - `/` and `%` are the division and remainder operators, they work on numbers
-and return an option of the types being operated on: `1 / 1` has type `?int`
-(this means division by zero must be explicitly checked)
+and return an option of the types being operated on: `1 / 1` has type `?int`,
+the output of a division or remainder is `nil` when the denominator is zero
+(this means division by zero must be explicitly checked).
 
 ### Prefix <a name="prefix"/>
 ```
 Prefix = "&" | "@" | "not" | "~" | "$"
 ```
 
- - `&` is the address-of operator, it takes any _addressable_ expression and returns a reference to that value.
+ - `&` is the address-of operator, it takes any *addressable* expression and returns a reference to that value.
 The output type is a reference of the expression type. It's subject to move semantics.
  - `@` is the value-at or dereferencing operator, it takes a reference and returns the base type.
 It's subject to move semantics.
  - `not` is the logical operator not, it takes a bool and returns a bool.
  - `~` is the unary minus operator, it takes a single integer and outputs an integer.
  - `$` is the stringify operator, it takes a value of any type and prints a
-string representation of it's values.
+string (`*i8`) representation of it's values.
 
 ### Suffix <a name="suffix"/>
 
@@ -844,7 +844,7 @@ proc main do
 
 For maps, `[]` performs a map look-up, it takes an expression
 of type *identical* to the map's key type, and the output
-is an option of the map's value type. (if a map has type `string -> int`
+is an option of the map's value type. (if a map has type `*i8 -> int`
 performing a map lookup will result in `?int`).
 
 ```
@@ -913,10 +913,10 @@ proc PrintFile[file:*i8] ?IO::Error do
   begin
     let a = switch type IO::Open[file, IO::ReadOnly] as v
             case IO:Error then return v
-            default v
+            case IO::File then v
     let contents = switch type IO::ReadAll[a]^*i8 as v
                    case IO:Error then return v
-                   default v
+                   case *i8 then v
     IO::Print[contents]
     return nil
   end
@@ -987,7 +987,7 @@ proc F[] int do
 Expressions inside a block are evaluated top-down, and blocks
 create a separated lexical scope.
 
-### ProductLit <a name="productlit"/>
+### Product Literal <a name="productliteral"/>
 
 ```
 ProductLit = ComplexLitBody
@@ -996,7 +996,44 @@ FieldList = Field ("," Field)* ","?
 Field = Expr ("=" Expr)?
 ```
 
-### ArrayLit <a name="arraylit"/>
+A product literal alocates a product type and sets it's values.
+The literal can be inferred or explicitly typed, named or unamed.
+It's an error to mix and match named and unamed fields.
+
+When explicitly typed, each field must have type *identical*
+to the field specified in the type, if the fields are unamed,
+the fields must be present in order, if names are used,
+the type must match the respectively named field in the type.
+
+Example of valid explicitly typed product literals:
+
+```
+const a = {:{int int} 1, 2}
+const b = {:{int *i8 int} 1, "a", 2}
+const c = {:{.a int .b *i8} b = "second", a = 1}
+```
+
+Example of invalid explicitly typed product literals:
+
+```
+const a = {:{int int} 1}
+const b = {:{int *i8 int} "a", 1, 2}
+const c = {:{.a int .b *i8} c = "second", a = 1}
+```
+
+When inferred, the resulting product has type equal to the
+product of each field concatenated together, even with names present,
+the order matters.
+
+Example of types inferred from product literals:
+
+```
+const a :{int int} = {1, 2}
+const b :{*i8 int} = {"a", 2}
+const c :{.b int .a int} = {b = 2, a = 1}
+```
+
+### Array Literal <a name="arrayliteral"/>
 ```
 ArrayLit = "\" ComplexLitBody
 ```
@@ -1155,7 +1192,7 @@ set a <-> b
 This is specially important when swapping items of arrays or maps,
 since using destructuring would invalidate the whole object, not only
 the item. `set a, b = {b, a}` will not work if you substitute `a` or `b`
-for an indexing or look-up expression.
+for an indexing or look-up expression that contains references.
 
 Note that `/=` and `%=` are missing for good cause, they output a type
 different from it's operands: `1 / 2` is of type `?int` not `int`.
@@ -1194,16 +1231,16 @@ must be a type *castable* to the base type of the array.
 ```
 proc main do
   begin
-		# if making arrays by 'length', you must specify the 'init'
-		let buff0: ?*i8 = new:*i8[length = 512, init = 0]
+    # if making arrays by 'length', you must specify the 'init'
+    let buff0: ?*i8 = new:*i8[length = 512, init = 0]
 
-		# however, if making by 'cap', you can omit the 'init',
-		# since the length will default to 0
-		let buff1: ?*i8 = new:*i8[cap = 512]
+    # however, if making by 'cap', you can omit the 'init',
+    # since the length will default to 0
+    let buff1: ?*i8 = new:*i8[cap = 512]
 
-		# if you specify both, 'cap' must be bigger than 'length'
-		# and 'init' must be set
-		let buff2: ?*i8 = new:*i8[cap = 512, length = 16, init = 0]
+    # if you specify both, 'cap' must be bigger than 'length'
+    # and 'init' must be set
+    let buff2: ?*i8 = new:*i8[cap = 512, length = 16, init = 0]
   end
 ```
 
@@ -1213,7 +1250,7 @@ but doesn't insert any values.
 ```
 proc main do
   begin
-		let mymap: ?(string->int) = new:string->int[cap = 512]
+    let mymap: ?(*i8->int) = new:*i8->int[cap = 512]
   end
 ```
 
@@ -1224,12 +1261,12 @@ to the type specified in `new`
 
 ```
 type BigDataStructure is {
-	int int int int int int
+  int int int int int int
 }
 
 proc main do
   begin
-		let a: ?BigDataStructure = new:BigDataStructure[{1, 1, 1, 1, 1, 1}]
+    let a: ?BigDataStructure = new:BigDataStructure[{1, 1, 1, 1, 1, 1}]
   end
 ```
 
@@ -1239,7 +1276,7 @@ since scalar values are likely to be stack alocated.
 # Type System <a name="typesystem"/>
 ## Type Canonicalization <a name="typecanonicalization"/>
 
- - _Identical_ options inside a sum type are canonicalized into a single option
+ - *Identical* options inside a sum type are canonicalized into a single option
  - Inside a sum type `void` is discarded during canonicalization
  - A product type with a single field is canonicalized to that field's type
  - Inside a product type `nil` is discarded during canonicalization.
@@ -1256,9 +1293,9 @@ a type is considered anonymous if it has not been assigned a name.
 
 Note: `enum` always creates new types, not aliases.
 
-- New types are unique, two differently named types are never _identical_.
-- New types declared in different modules are never _identical_.
-- Aliases and anonymous types are _identical_ if they're _equivalent_.
+- New types are unique, two differently named types are never *identical*.
+- New types declared in different modules are never *identical*.
+- Aliases and anonymous types are *identical* if they're *equivalent*.
 
 ## Type Equivalence <a name="typeequivalence"/>
 
@@ -1267,17 +1304,17 @@ be canonicalized.
 
 Types are equivalent if they're structurally identical.
 
- - Two product types are _equivalent_ if they have _identical_ types
+ - Two product types are *equivalent* if they have *identical* types
 layed out in the same order.
- - Two sum types are _equivalent_ if they contain _identical_ types,
+ - Two sum types are *equivalent* if they contain *identical* types,
 regardless of order
- - Two procedural types are _equivalent_ if they have the same number
- of _identical_ parameters layed out in the same order,
- and the return types are _identical_
- - Two map types are _equivalent_ if the keys are of _identical_ types,
-and the values are of _identical_ types
- - Two array types are _equivalent_ if they have _identical_ base types
- - Two reference types are _equivalent_ if they have _identical_ base types.
+ - Two procedural types are *equivalent* if they have the same number
+ of *identical* parameters layed out in the same order,
+ and the return types are *identical*
+ - Two map types are *equivalent* if the keys are of *identical* types,
+and the values are of *identical* types
+ - Two array types are *equivalent* if they have *identical* base types
+ - Two reference types are *equivalent* if they have *identical* base types.
 
 ## Type Assignability <a name="typeassignability"/>
 ## Type Castability <a name="typecastability"/>
@@ -1455,7 +1492,7 @@ whitespace = " " | "\t"
 ## Rock, Paper, Scissors <a name="rockpaperscissors"/>
 
 ```
-proc Winner[first:string, second:string] ?string do
+proc Winner[first:*i8, second:*i8] ?*i8 do
   let rules = \{
     {"Rock", \{
             {"Paper",    "Paper"},
