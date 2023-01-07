@@ -1964,10 +1964,10 @@ proc JsonToPerson[j:Json] ?*Person do
             default return nil
 
 proc GetName[person:*i8 -> Json] ?*i8 do
-    switch type person["name"] as name
+    switch type person["name"]^Json as name
     case *i8 then name
 
 proc GetAge[person:*i8 -> Json] ?int do
-    switch type person["age"] as age
+    switch type person["age"]^Json as age
     case int then age
 ```
