@@ -56,7 +56,9 @@ i'll care about this later, it will be a fun challenge to write the YMCA compile
 
 While in HIR, operands can have the following classes:
 
+```
   temp  lit  local  global  internal  arg
+```
 
 A *temp* is a clean value that can only be instatiated and never mutated.
 

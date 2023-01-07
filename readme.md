@@ -50,14 +50,14 @@ proc main do print["Hello, World!\n"];
         2. [Block](#block)
         3. [Product Literal](#productliteral)
         4. [Array Literal](#arrayliteral) \*
-        5. [For](#for) \*
+        5. [For](#for)
             1. [Conditional](#conditional)
             2. [Iterative](#iterative)
             3. [Range](#range)
-        6. [Switch](#switch) \*
-            1. [ValueSwitch](#valueswitch)
-            2. [TypeSwitch](#typeswitch)
-        7. [If](#if) \*
+        6. [Switch](#switch)
+            1. [Value Switch](#valueswitch)
+            2. [Type Switch](#typeswitch)
+        7. [If](#if)
         8. [EarlyReturn](#earlyreturn)
         9. [Let](#let) \*
         10. [Set](#set)
@@ -68,9 +68,10 @@ proc main do print["Hello, World!\n"];
     3. [Type Equivalence](#typeequivalence)
     4. [Assignable](#assignable) \*
     5. [Castable](#castable) \*
-    6. [Addressable](#addressable) \*
-    7. [Moving Semantics](#movingsemantics) \*
-    8. [Freeing Semantics](#freeingsemantics) \*
+    6. [Immutable/Mutable](#immutablemutable)
+    7. [Addressable](#addressable) \*
+    8. [Moving Semantics](#movingsemantics)
+    9. [Freeing Semantics](#freeingsemantics) \*
 5. [Misc]
     1. [Full Grammar](#fullgrammar)
     2. [Full Type Rules](#fullinferencerules) \*
@@ -795,11 +796,11 @@ a procedure call, if however the procedure is being passed as a value,
 named parameters are not available, in this case the compiler must
 return an error.
 
-The parameters of a procedure must be of *identical* type to the formal
+The parameters of a procedure must be of *assignable* type to the formal
 parameters defined in the procedure declaration, if named parameters
 are not used, the order is important, and each parameter must match
 the parameters in the declaration in order. If named parameters are used,
-each parameter must be of *identical* type to the respectively named
+each parameter must be of *assignable* type to the respectively named
 formal parameter in the procedure declaration. You can't mix and match
 ordered and named parameters.
 
@@ -894,7 +895,7 @@ TypeReturn = "^" TypeExpr
 
 If an expression is of a sum type, the `^` operator can be used to
 perform an early return of unwanted values. It returns any value
-that is different from the type specified and returns a value of that
+that is different from the type specified and outputs a value of that
 type. The type specified must be an option inside the sum.
 
 ```
@@ -915,7 +916,7 @@ proc PrintFile[file:*i8] ?IO::Error do
     let a = switch type IO::Open[file, IO::ReadOnly] as v
             case IO:Error then return v
             case IO::File then v
-    let contents = switch type IO::ReadAll[a]^*i8 as v
+    let contents = switch type IO::ReadAll[a] as v
                    case IO:Error then return v
                    case *i8 then v
     IO::Print[contents]
@@ -1042,39 +1043,232 @@ ArrayLit = "\" ComplexLitBody
 ```
 For = "for" (Conditional | Iterative | Range)
 ```
+
+`for` is the loop construct in anu, it has 3 forms,
+conditional, iterative and ranged.
+
+The type of the `for` expression is always an array of the type
+of it's body.
+`for true do 1;`,
+`for each item in array do 1;` and
+`for range 0 to 10 do 1;` all have type `*int`
+
 #### Conditional <a name="conditional"/>
 ```
 Conditional = Expr "do" Expr
 ```
+
+The conditional form is the simplest form of looping,
+it takes the form of:
+
+```
+for <cond> do <expr>
+```
+
+Where `<cond>` is an expression of type `bool`. It executes the `<expr>`
+until `<cond>` equals `false`.
+
 #### Iterative <a name="iterative"/>
 ```
 Iterative = "each" id ("," id)? "in" Expr "do" Expr
 ```
+
+The iterative form is used to iterate over items of an array or map,
+a `for each` expression will loop until all items of an array or map are
+evaluated (or until an early return occurs). It takes the form of:
+
+```
+for each <id> in <collection> do <expr>
+```
+
+Where `<collection>` is an expression with array or map type, it
+evaluates `<expr>` until all items are consumed. The `<id>` name
+is valid inside `<expr>`. A second identifier might be used
+to represent other values. Both identifiers are immutable.
+
+If the collection is an array, the type of `<id>` is the base type of
+the array, and if a second identifier is used (`for each <id>, <id> in ...`)
+The second identifier represents the index of the item, and has type `int`.
+
+If the collection is a map, the type of `<id>` is the key type of the map,
+and if a second identifier is used, it's type will be the 
+value type of the map.
+
+Given a `for` in the form of: `for each <first>, <second> in <collection> do ...`
+It can be summarized in the following table
+
+| collection | first    | second      |
+|:----------:|:--------:|:-----------:|
+| array `*T` | item `T` | index `int` |
+| map `K->V` | key `K`  | value `V`   |
+
 #### Range <a name="range"/>
 ```
 Range = "range" Expr "to" Expr ("as" id)? "do" Expr
 ```
+
+The `for range` loop iterates in a range of numbers, incrementally
+or decrementally, and evaluates the expression once for each number.
+It takes the form:
+
+```
+for range <start> to <end> as <id> do <expr>
+```
+
+Where `as <id>` may be omitted. Both `<start>` and `<end>`
+must be numerical. The type of `<id>`
+is the same type as `<start>` and `<end>`.
+`<end>` is exclusive.
+
+If `<start>` is bigger than `<end>`, the value
+of `<id>` starts equal to `<start>`, goes down by 1 until it
+is equal to `<end>`, when it stops iterating.
+
+If `<start>` is smaller than `<end>`,
+the value of `<id>` starts equal to `<start>`, goes down by 1
+until it is equal to `<end>`, when it stops iterating.
+
+If `<start>` is equal `<end>` the loop will not evaluate `<expr>`
+
 ### Switch <a name="switch"/>
 ```
 Switch = "switch" (TypeSwitch | ValueSwitch)
 ```
-#### ValueSwitch <a name="valueswitch"/>
+
+`switch` expressions are like `if` expressions
+but they are specialized to constant values. There are
+two kinds of switches, a type switch and a value switch,
+one operates on values, the other operates on types.
+
+```
+switch <expr>
+case <const_expr0>, ..., <const_exprN> then <expr1>
+case <const_exprN+1>, ..., <const_exprN+M> then <expr2>
+...
+default <exprN>
+```
+
+The output type of value and type switches work the same way,
+similarly to `if`s, the output type of a `switch` expression is the sum
+of the types of all `then` expressions. The type of the previous
+example would be:
+`typeof(<expr1>) | typeof(<expr2>) | ... | typeof(<exprN>)`.
+
+If the default case is not specified, the type of the switch expression
+is the sum of the types of all `then` expressions together with `nil`.
+The type of the following expression is: 
+`typeof(<expr1>) | ... | typeof(<exprN>) | nil`
+
+```
+switch <expr>
+case <const_expr> then <expr1>
+...
+case <const_expr> then <exprN>
+```
+
+#### Value Switch <a name="valueswitch"/>
 ```
 ValueSwitch = Expr ValueCase* Default?
 ValueCase = "case" ExprList "then" Expr
 Default = "default" Expr
 ```
-#### TypeSwitch <a name="typeswitch"/>
+
+A value switch takes the following form:
+
+```
+switch <expr>
+case <const_expr0>, ..., <const_exprN> then <expr1>
+case <const_exprN+1>, ..., <const_exprN+M> then <expr2>
+...
+default <exprN>
+```
+
+Where `<const_expr>` is a expression with a static value known at
+compile time. Evaluation of a switch expression can be thought that 
+it compares the `<expr>` successfully with each `<const_expr>` and
+if it's equal, it jumps to the `then` part.
+
+With this evaluation strategy, it's not an error to have two or more
+equal cases in a switch, but compilers should warn if that happens.
+
+#### Type Switch <a name="typeswitch"/>
+
 ```
 TypeSwitch = "type" Expr ("as" id) TypeCase* Default?
 TypeCase = "case" TypeExprList "then" Expr
 ```
+
+The type switch is similar to the value switch but it operates on
+types, types in anu are always static. The type switch may also create an
+alias of the value being switched on, it shadows the original
+variable and is *immutable*. In the following example `as <id>` may
+be omitted.
+
+```
+switch type <expr> as <id>
+case <type_expr0>, ..., <type_exprN> then <expr1>
+case <type_exprN+1>, ..., <type_exprN+M> then <expr2>
+...
+default <exprN>
+```
+
+The type of `<id>` is dependent on the control flow.
+It's type in the `then` is the sum of all types present in the `case`.
+In `<expr1>` the type of `<id>` is `<type_expr0> | ... | <type_exprN>`.
+In the `default` branch, the type of `<id>` is identical to the type of
+`<expr>`.
+
+The output type of the `switch type` expression follows the same rules
+as the value switch.
+
 ### If <a name="if"/>
 ```
 If = "if" Expr "then" Expr ElseIf* Else?
 ElseIf = "elseif" Expr "then" Expr
 Else = "else" Expr
 ```
+
+The `if <cond> then <expr>` construct evaluates `<expr>`
+if the value of `<cond>` is `true`, otherwise,
+execution procedes to the next `elseif` condition (if present),
+if none of the `elseif` branches are entered, the `else` branch
+is entered (if present).
+
+The output type of an `if` expression is the sum of the types
+of each expression body, that is, given the following structure,
+the type of the `if` expression becomes
+`typeof(<expr1>) | typeof(<expr2>) | ... | typeof(<exprN>)`
+
+```
+if <cond0> then <expr1>
+elseif <cond1> then <expr2>
+...
+else <exprN>
+```
+
+If the `else` branch is not present, the output type is the
+sum of the types of each expression body, together with `nil`.
+In other words, given the following structure, the type of the 
+`if` expression becomes
+`typeof(<expr1>) | typeof(<expr2>) | ... | typeof(<exprN>) | nil`
+
+```
+if <cond0> then <expr1>
+elseif <cond1> then <expr2>
+...
+elseif <cond1> then <exprN>
+```
+
+Due to sum type canonicalization, it's possible to write an
+`if` expression like the following, where the output type is only
+`int`.
+
+```
+proc factorial[n:int] int do
+  if n == 0 then 1
+  else n * factorial[n-1]
+```
+
 ### EarlyReturn <a name="earlyreturn"/>
 ```
 EarlyReturn = "return" Expr
@@ -1459,11 +1653,11 @@ proc main do
   begin
     let a = 0, aa = 1, aaa = 2
     #                 v   v    v they are moved
-	  let b :*&int = \{&a, &aa, &aaa}
+    let b :*&int = \{&a, &aa, &aaa}
 
-	  #       v the contents of 'b' are moved
-	  set b = b .. b;
-	  #            ^ error: use of container with moved references
+    #       v the contents of 'b' are moved
+    set b = b .. b;
+    #            ^ error: use of container with moved references
 
     set b ..= b;
     #   ^ error: use of container with moved references
@@ -1513,8 +1707,7 @@ proc main do
 proc F[&int] do nil;
 ```
 
-Since the item is mutable (and actually changes the item in the array)
-the following is a valid way to operate on references inside a `for each`:
+The following is a valid way to operate on references inside a `for each`:
 
 ```
 proc main do
@@ -1523,10 +1716,10 @@ proc main do
     let z = \{:*?&int &a, &b, &c}
 
     # frees all objects referenced by 'z'
-    for each item in z do
+    for each _, index in z do
       begin
         let v :?&int = nil
-        set item <-> v
+        set z[index] <-> v
         F[v]
       end
 
@@ -1543,7 +1736,7 @@ proc main do
   begin
     let myInt = 0, mySecondInt = 1
     let a = \{&myInt, &mySecondInt}
-  	set a = a[0, 1] # this should free 'mySecondInt' internally
+    set a = a[0, 1] # this should free 'mySecondInt' internally
   end
 ```
 
@@ -1743,4 +1936,38 @@ proc Winner[first:*i8, second:*i8] ?*i8 do
           if rule.a == second then return rule.b;
     return nil;
   end;
+```
+
+## Json Conversion 
+
+Imagine for a brief moment that Json is sane and uses `int`s instead
+of floats.
+
+```
+type Json is bool | int | nil | *i8 | *i8 -> Json | *Json
+
+type Person is {
+    .name *i8
+    .age int
+}
+
+proc JsonToPerson[j:Json] ?*Person do
+    switch type j as v
+    case *Json then
+        for each item in v do
+            switch type item as person
+            case *i8 -> Json then
+                {:Person
+                    GetName[person]^*i8,
+                    GetAge[person]^int,
+                }
+            default return nil
+
+proc GetName[person:*i8 -> Json] ?*i8 do
+    switch type person["name"] as name
+    case *i8 then name
+
+proc GetAge[person:*i8 -> Json] ?int do
+    switch type person["age"] as age
+    case int then age
 ```
