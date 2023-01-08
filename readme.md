@@ -598,6 +598,8 @@ the argument types and a single return type.
 
 ```
 proc[T] T == proc[T] T
+proc[T, U] T == proc[T, U] T
+
 proc[T, U] T != proc[U, T] T
 proc[] nil != proc[nil] nil
 ```
@@ -622,6 +624,9 @@ Array types are made by using the repetition operator `*`.
 Arrays have two special fields `length` and `cap`, both of type `int`,
 that returns the length and total capacity of the array.
 
+An array of `nil`s should raise a warning, since indexing and setting
+operations will not work properly in these cases.
+
 #### Map Type <a name="maptype"/>
 
 ```
@@ -638,8 +643,24 @@ and the values are of *identical* types
 *i8 -> int != int -> *i8
 ```
 
-The key of a map cannot be a reference or procedure type, it has to be
-comparable.
+The key of a map has to be hashable and comparable,
+as such, it cannot be or contain a reference, procedure or map type.
+
+An map with `nil` as the value type should raise a warning, since look-up,
+insertion and removing operations will not work properly in these cases. If
+the user wants to use the map as a set, he can do the following:
+
+```
+type Found is nil
+type MySet is *i8 -> Found
+
+proc DoesExist[s:MySet, item:*i8] do
+  if s[item] is Found then print["item exists!"]
+  else print["item does not exist!"]
+```
+
+The type of `s[item]` is `Found | nil`, since `nil` and `Found` are
+*equivalent* but not *identical*.
 
 #### Optional <a name="optionals"/>
 
@@ -1125,7 +1146,7 @@ of `<id>` starts equal to `<start>`, goes down by 1 until it
 is equal to `<end>`, when it stops iterating.
 
 If `<start>` is smaller than `<end>`,
-the value of `<id>` starts equal to `<start>`, goes down by 1
+the value of `<id>` starts equal to `<start>`, goes up by 1
 until it is equal to `<end>`, when it stops iterating.
 
 If `<start>` is equal `<end>` the loop will not evaluate `<expr>`
@@ -1367,13 +1388,16 @@ references.
 
 The `set ... remove ...` expression removes an item from a map and
 returns the item. `set a remove "key"` removes the value corresponding
-with the key `"key"` from the map `a` and returns it's value.
+with the key `"key"` from the map `a` and returns it's value. Looking up
+a key in a map and removing that key should return the same item, if present,
+otherwise it should return `nil`. Given a map of type `*i8 -> int`, the
+output type of a remove expression on this map should be `?int`.
 
 ```
 proc main do
   begin
     let a = \{"key" = 1, "abracadabra" = 2}
-    let b = set a remove "key" # 'b' is equal to 1
+    let b : ?int = set a remove "key" # 'b' is equal to 1
   end
 ```
 
@@ -1404,6 +1428,13 @@ If the left side contains multiple expressions and one of them is
 an array indexing, the output will still be a simple option,
 but the compiler must warn the user. The compiler should also warn
 the user if he is discarding the option.
+
+To reset the `length` of an array, you can set it's value to zero,
+its only possible to assign this field with zero, and nothing else.
+
+```
+set array.length = 0
+```
 
 ### New <a name="new"/>
 ```
