@@ -49,7 +49,7 @@ proc main do print["Hello, World!\n"];
         1. [NestedExpr](#nestedexpr)
         2. [Block](#block)
         3. [Product Literal](#productliteral)
-        4. [Array Literal](#arrayliteral) \*
+        4. [Array/Map Literal](#arraymapliteral)
         5. [For](#for)
             1. [Conditional](#conditional)
             2. [Iterative](#iterative)
@@ -66,17 +66,17 @@ proc main do print["Hello, World!\n"];
     1. [Type Canonicalization](#typecanonicalization)
     2. [Type Identity](#typeidentity)
     3. [Type Equivalence](#typeequivalence)
-    4. [Assignable](#assignable) \*
-    5. [Castable](#castable) \*
+    4. [Assignable](#assignable)
+    5. [Castable](#castable)
     6. [Immutable/Mutable](#immutablemutable)
-    7. [Addressable](#addressable) \*
+    7. [Addressable](#addressable)
     8. [Moving Semantics](#movingsemantics)
-    9. [Freeing Semantics](#freeingsemantics) \*
-5. [Misc]
+    9. [Freeing Semantics](#freeingsemantics)
+5. [Misc](#misc)
     1. [Full Grammar](#fullgrammar)
     2. [Full Type Rules](#fullinferencerules) \*
     3. [Future](#future)
-6. [Examples]
+6. [Examples](#examples)
     1. [Rock, Paper, Scissors](#rockpaperscissors)
 
 # Introduction <a name="introduction"/>
@@ -406,6 +406,9 @@ proc F do
 If `print` has type `proc[*i8]nil` the whole expression has type `*nil`,
 but since the value is discarded, `F` has type `proc[]nil`
 
+If a return type is specified, the expression following `do`
+must have type `assignable` to this return type.
+
 ### Constant <a name="constant"/>
 
 ```
@@ -419,6 +422,10 @@ capable of being computed at compile time.
 
 It's invalid to create a constant that uses blocks, branching, loops, 
 mutation, addressing, returns, procedure calls and/or array/map accessing.
+
+If a constant has it's type annotated, the initialization expression must
+have type `assignable` to this type. If it's not annotated, the type of the
+constant is inferred to be the same type of the expression.
 
 ### Type <a name="type"/>
 
@@ -662,7 +669,7 @@ proc DoesExist[s:MySet, item:*i8] do
 The type of `s[item]` is `Found | nil`, since `nil` and `Found` are
 *equivalent* but not *identical*.
 
-#### Optional <a name="optionals"/>
+#### Optional <a name="optional"/>
 
 ```
 UnaryType = TypePrefix* SingleType
@@ -817,7 +824,7 @@ a procedure call, if however the procedure is being passed as a value,
 named parameters are not available, in this case the compiler must
 return an error.
 
-The parameters of a procedure must be of *assignable* type to the formal
+The parameters of a procedure must have type *assignable* to the formal
 parameters defined in the procedure declaration, if named parameters
 are not used, the order is important, and each parameter must match
 the parameters in the declaration in order. If named parameters are used,
@@ -963,7 +970,7 @@ then it's an invalid type annotation.
 Factor
 = Name
 | int | bool | rune | string | nil
-| ArrayLit
+| ArrayMapLit
 | ProductLit
 | For
 | Switch
@@ -1056,11 +1063,29 @@ const b :{*i8 int} = {"a", 2}
 const c :{.b int .a int} = {b = 2, a = 1}
 ```
 
-### Array Literal <a name="arrayliteral"/>
+### Array/Map Literal <a name="arraymapliteral"/>
+
 ```
-ArrayLit = "\" ComplexLitBody
+ArrayMapLit = "\" ComplexLitBody
 ```
+
+An array or map literal differ by the use of pairs in the literal body,
+pairs are made using the assignment operator `=`. Both array and map
+literals can be type annotated or inferred, when type annotated,
+each expression is checked to match the annotation, while inferrence occurrs
+differently for maps and arrays.
+
+For array literals, the inferred type is an array of the sum of the
+type of all expressions inside the body.
+A literal `\{1, "1", true}` has type `*(int|*i8|bool)`.
+
+For map literals, the inferred type is a map with key type equal to the
+sum of the type of all key expressions, and a value type equal to the
+sum of the type of all value expressions. In other words, a literal
+`\{"a" = 1, 1 = "a", 1 = 1}` has type `*i8|int -> *i8|int`.
+
 ### For <a name="for"/>
+
 ```
 For = "for" (Conditional | Iterative | Range)
 ```
@@ -1300,13 +1325,17 @@ from a procedure, the type of the expression must be
 *assignable* to the return type of the procedure.
 The output type of this expression is `void`.
 
-Note that the following procedure is valid since
-it's supposed return type `void | int`
-gets canonicalized to `int`:
+Note that the following procedures are invalid since
+return has type `void`, which is not assignable to `int`:
 
 ```
 proc F[] int do
   return 1;
+
+proc G[] int do
+  begin
+    return 1;
+  end
 ```
 
 ### Let <a name="let"/>
@@ -1331,7 +1360,9 @@ that both sides are *identical*.
 There are multiple operators available to a `set` expression,
 in all cases, the right side always evaluates before the left side.
 
-The following expressions can be the target of an assignment:
+Assignment requires that at least the left side is *mutable*,
+requiring both sides to be *mutable* on a swap `<->`.
+The following expressions can be the target of an assignment.
 
  - Mutable variable, eg. `set a = 1`
  - Indexing of a mutable variable, eg. `set a[0] = 1`
@@ -1500,7 +1531,11 @@ Using `new` with scalar values should return a warning,
 since scalar values are likely to be stack alocated.
 
 # Type System <a name="typesystem"/>
+
 ## Type Canonicalization <a name="typecanonicalization"/>
+
+Types must be canonicalized before any comparisons can be made with them.
+The rules for canonicalization are:
 
  - *Identical* options inside a sum type are canonicalized into a single option
  - Inside a sum type `void` is discarded during canonicalization
@@ -1542,8 +1577,56 @@ and the values are of *identical* types
  - Two array types are *equivalent* if they have *identical* base types
  - Two reference types are *equivalent* if they have *identical* base types.
 
-## Type Assignability <a name="typeassignability"/>
-## Type Castability <a name="typecastability"/>
+## Assignable <a name="assignable"/>
+
+A type `T` is assignable to a type `U` if `T` and `U` are *identical*.
+
+## Castable <a name="castable"/>
+
+A type `T` is castable to a type `U` if one of the following
+is true:
+
+ - both `T` and `U` are numeric types
+ - `T` is numeric and `U` is a `bool`
+ - `T` is *equivalent* to `U`
+
+## Immutable/Mutable <a name="immutablemutable"/>
+
+Most expressions are immutable, mutable expressions
+are only uses of mutable variables and dereferencing operations.
+In other words, an object is mutable only if declared with the
+`let` construct, and references to this object may modify it.
+
+The contents of an mutable object may be accessed and are themselves
+mutable too. This is valid for field access in products, indexing
+in arrays and look-ups in maps. In other words, if `a` is mutable,
+then `a[1]`, `a["a"]` and `a.a` are also mutable
+
+All other things: procedure arguments, procedure returns,
+literals, aliases etc, are immutable.
+
+## Addressable <a name="addressable"/>
+
+An expression is addressable if it's a mutable variable.
+In the following code, only `c` is addressable.
+
+```
+proc P[a:int, b:int] int do
+  begin
+    let c = a
+
+    for each item in \{1, 2, 3} do 1+1;
+
+    for range 0 to 10 as i do i+1
+
+    switch type 1:?int as v
+    case int do 1
+    default nil
+
+    return 1
+  end
+```
+
 ## Moving semantics <a name="movingsemantics"/>
 
 Moving semantics guarantee that all references in Anu are the sole owner
@@ -1760,17 +1843,136 @@ proc main do
 proc F[?&int] do nil;
 ```
 
+Returning a reference from a procedure also returns it's ownership,
+in the following procedure, `F` essentially borrows `a`, and returns it.
+
+```
+proc F[a:&int] &int do a
+```
+
 ### Freeing Semantics <a name="freeingsemantics"/>
+
+Objects are freed as soon as possible. An object may be freed when:
+
+ - You change the value of a reference
+ - You change the value of an object that contains references
+ - A reference value is no longer used in or returned from a scope that has it's ownership
+ - A reference value is discarded
+
+Examples: 
+
+Changing the value of a reference:
+
+```
+proc F do
+  begin
+    let a = 1;
+    let b :?&int = &a
+    set b = nil # `a` is freed
+  end
+```
+
+Changing the value of an object that contains references:
+
+```
+proc F do
+  begin
+    let a = 1;
+    let b = 2;
+    let c :?{&int &int} = {&a, &b}
+    set c = nil # `a` and `b` are freed
+  end
+```
+
+Slicing is subject to moving semantics, when slicing an array that contains
+references, the remaining objects not contained in the slice are freed,
+since they are no longer used in the scope (they are not reachable).
 
 ```
 proc main do
   begin
     let myInt = 0, mySecondInt = 1
     let a = \{&myInt, &mySecondInt}
-    set a = a[0, 1] # this should free 'mySecondInt' internally
+
+    a[0, 1] # this frees 'mySecondInt' internally
+    # 'a' is invalid here
   end
 ```
 
+Objects are freed when they're no longer being used in that
+branch path. In the following example, the array `a` is freed
+once in each possible `if` branch, even before the end of the block.
+
+```
+proc main do
+  begin
+    let a = new:*int[cap = 1024]
+    let b = if true then a[0] # 'a' is freed here
+            else a[1]         # and also here
+  end
+```
+
+When branching, if any branch takes ownership and doesn't return it,
+the object may be safely freed earlier.
+
+```
+proc main do
+  begin
+    let a = 1;
+
+    if true then a # here 'a' is not moved but since it's invalid
+                   # after the branch, and thus not used, it is freed
+    else let b = &a in @b + 1 # 'a' is moved to 'b', and 'b'
+                              # is no longer used in the scope
+                              # so it's freed
+
+    # 'a' is invalid here
+  end
+```
+
+If an object is returned from a procedure,
+it's not freed by the procedure.
+
+```
+proc F[] &int do
+  let a = 1 in &a  # 'a' essentially escapes this procedure
+                   # and is not freed here
+```
+
+An object used inside a loop is being used for the remaining of the loop,
+unless it's ownership is moved.
+
+```
+proc F do
+  begin
+    let a = 1
+    for range 0 to 10 do
+      set a += 1
+    # 'a' is freed only here
+  end
+```
+
+However:
+
+```
+proc G do
+  begin
+    let a = 1
+    let b = &a
+    for range 0 to 10 do
+      begin
+        F[b] # frees either 'a' or 'c'
+        let c = 1
+        set b = &c # 'c' is moved to 'b'
+      end
+
+    # 'b' is still valid
+    # and will be freed after the for loop
+  end
+
+# 'a' will be freed inside this function
+proc F[&int] do nil;
+```
 
 # Misc <a name="misc"/>
 
@@ -1855,7 +2057,7 @@ CallOrIndex = "[" FieldList "]"
 Factor
 = Name
 | int | bool | rune | string | nil
-| ArrayLit
+| ArrayMapLit
 | ProductLit
 | For
 | Switch
@@ -1872,7 +2074,7 @@ NestedExpr = "(" Expr ")"
 Block = "begin" ExprSemicolon* "end"
 ExprSemicolon = Expr ";"?
 
-ArrayLit = "\" ComplexLitBody
+ArrayMapLit = "\" ComplexLitBody
 ProductLit = ComplexLitBody
 ComplexLitBody = "{" (":" TypeExpr)? FieldList? "}"
 
@@ -1931,18 +2133,20 @@ whitespace = " " | "\t"
 }
 ```
 
-# Future <a name="future"/>
+## Future <a name="future"/>
 
  - Fix type syntax: products with commas `{int, int}` and allow unions inside `{T|U, T}`
- - FFI
+ - Make maps comparable and hashable
+ - `asm` procedure and a clear, well defined ABI
+ - FFI?
  - Floats?
  - Bitwise operators
- - Rank 1 polymorphism and inference
+ - Rank 1 polymorphism and inference (inferred constraints too)
  - Some form of reflection that returns stack trace information
  - Syntax sugar for chaining (without creating closures): `a \> f[] \> g[]`
 
 # Examples <a name="examples"/>
-## Rock, Paper, Scissors <a name="rockpaperscissors"/>
+## Rock, Paper, Scissors
 
 ```
 proc Winner[first:*i8, second:*i8] ?*i8 do
