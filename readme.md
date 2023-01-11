@@ -62,7 +62,7 @@ proc main do print["Hello, World!\n"];
         9. [Let](#let) \*
         10. [Set](#set)
         11. [New](#new)
-4. [Type System](#typesystem)
+4. [Semantics](#semantics)
     1. [Type Canonicalization](#typecanonicalization)
     2. [Type Identity](#typeidentity)
     3. [Type Equivalence](#typeequivalence)
@@ -72,6 +72,7 @@ proc main do print["Hello, World!\n"];
     7. [Addressable](#addressable)
     8. [Moving Semantics](#movingsemantics)
     9. [Freeing Semantics](#freeingsemantics)
+    10. [Scopes](#scopes) \*
 5. [Misc](#misc)
     1. [Full Grammar](#fullgrammar)
     2. [Full Type Rules](#fullinferencerules) \*
@@ -198,6 +199,38 @@ as a single token.
 ```
 
 # Grammatical Elements <a name="grammar"/>
+
+Anu's grammar is designed to be parsed by recursive descent, and
+should be very close to LL(1). There are, however, places of
+ambiguity for example with the dangling else, in all cases,
+the grammatical elements always bind to the innermost production.
+Consider the following `if` expression.
+
+```
+if true then
+if true then 0
+else 1
+```
+
+It should be parsed like so:
+
+```
+if true then (
+  if true then 0
+  else 1
+)
+```
+
+Instead of:
+
+```
+if true then
+  (if true then 0)
+else 1
+```
+
+Where this rule is not convenient (or safe), it's best to
+desambiguate with parenthesis `(`/`)` or blocks `begin`/`end`.
 
 ## Module <a name="module"/>
 
@@ -1347,6 +1380,83 @@ VarList = Annotated ("," Annotated)* ","?
 Annotated = id TypeAnnot?
 ```
 
+`let` is the only way to declare variables inside a procedure,
+it may be used to declare more than one variable at once,
+and may be used to create it's own scope.
+
+The output of a `let` expression is the value of the expression after
+`in`, if present, if not present, it's value is `nil`.
+
+In the following procedure, `a` is available when `b` is being
+defined, and the output of the procedure is `a * b`. The variables
+`a` and `b` are only accessible inside the `in` expression.
+
+```
+proc F[] int do
+  let a = 3,
+      b = 2 + a in a * b;
+```
+
+If the `in` is not present, the variable is declared in the
+scope the `let` expression is present in. The following procedure
+is equivalent to the above, but doesn't use `in`.
+
+```
+proc F[] int do
+  begin
+    let a = 3
+    let b = 2 + a
+    a * b
+  end
+```
+
+Observe that two variables in the same scope cannot have the same
+name, the following procedure is in error:
+
+```
+proc F[] int do
+  let a = 3,
+      a = 2 + a in 3 * a
+  #   ^ error: variable `a` already declared in this scope
+```
+
+However, since `in` creates a new scope, the following is fine:
+
+```
+proc F[] int do
+  begin
+    let a = 3
+    let a = a + 2 in 3 * a;
+    #   ^ shadows the previous `a` in this inner scope
+  end
+```
+
+Destructuring products works the same in `let` as in `set`,
+if the right side after `=` is a product, the identifiers on the
+left side are declared and set with the respective field from
+the product, in order.
+
+```
+proc F[] int do
+  let a, b = {1, 2} in a + b;
+```
+
+Observe that since the right side evaluates first,
+the values on the left side are not available until the next declaration
+or until the `in` expression.
+
+Type annotation works the same as with `const`ants, if the
+left side is annotated, the right side must be *assignable*
+to this type.
+
+It's possible to combine both destructuring and annotation.
+
+```
+proc F[] ?int do
+  let a:?int, b:?int = {1, 2}
+     in a^int * b^int;
+```
+
 ### Set <a name="set"/>
 ```
 Set = "set" ExprList assignOp Expr
@@ -1530,7 +1640,7 @@ proc main do
 Using `new` with scalar values should return a warning,
 since scalar values are likely to be stack alocated.
 
-# Type System <a name="typesystem"/>
+# Semantics <a name="semantics"/>
 
 ## Type Canonicalization <a name="typecanonicalization"/>
 
@@ -1850,7 +1960,7 @@ in the following procedure, `F` essentially borrows `a`, and returns it.
 proc F[a:&int] &int do a
 ```
 
-### Freeing Semantics <a name="freeingsemantics"/>
+## Freeing Semantics <a name="freeingsemantics"/>
 
 Objects are freed as soon as possible. An object may be freed when:
 
@@ -1973,6 +2083,8 @@ proc G do
 # 'a' will be freed inside this function
 proc F[&int] do nil;
 ```
+
+## Scopes <a name="scopes"/>
 
 # Misc <a name="misc"/>
 
@@ -2137,7 +2249,8 @@ whitespace = " " | "\t"
 
  - Fix type syntax: products with commas `{int, int}` and allow unions inside `{T|U, T}`
  - Make maps comparable and hashable
- - `asm` procedure and a clear, well defined ABI
+ - `target` construct for build tags aroung symbols
+ - `asm` procedures and a clear, well defined ABI
  - FFI?
  - Floats?
  - Bitwise operators
