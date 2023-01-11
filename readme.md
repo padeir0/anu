@@ -59,7 +59,7 @@ proc main do print["Hello, World!\n"];
             2. [Type Switch](#typeswitch)
         7. [If](#if)
         8. [EarlyReturn](#earlyreturn)
-        9. [Let](#let) \*
+        9. [Let](#let)
         10. [Set](#set)
         11. [New](#new)
 4. [Semantics](#semantics)
@@ -72,13 +72,11 @@ proc main do print["Hello, World!\n"];
     7. [Addressable](#addressable)
     8. [Moving Semantics](#movingsemantics)
     9. [Freeing Semantics](#freeingsemantics)
-    10. [Scopes](#scopes) \*
+    10. [Scopes](#scopes)
 5. [Misc](#misc)
     1. [Full Grammar](#fullgrammar)
-    2. [Full Type Rules](#fullinferencerules) \*
-    3. [Future](#future)
+    2. [Future](#future)
 6. [Examples](#examples)
-    1. [Rock, Paper, Scissors](#rockpaperscissors)
 
 # Introduction <a name="introduction"/>
 
@@ -231,6 +229,10 @@ else 1
 
 Where this rule is not convenient (or safe), it's best to
 desambiguate with parenthesis `(`/`)` or blocks `begin`/`end`.
+
+Productions known to be dangling are: `let ... in ...`, `if ... then` and
+`switch ... case`. Productions that are not LL(1) are all lists with
+optional trailing commas and fields with optional names.
 
 ## Module <a name="module"/>
 
@@ -2086,6 +2088,89 @@ proc F[&int] do nil;
 
 ## Scopes <a name="scopes"/>
 
+In the following examples, the arrows indicate the range of each scope
+and are accompained by a number that indicates the level of nesting
+of each scope.
+
+There are two implicit scopes created in any anu program: the universe
+scope and the global module scope. They are nested like so:
+
+```
+------------------------------------
+| universe                         |
+| ---------- ---------- ---------- |
+| | module | | module | | module | |
+| ---------- ---------- ---------- |
+------------------------------------
+```
+
+Where each `module` represents the global module scope of a separate module.
+Built-ins are declared in the `universe` scope and may be shadowed by
+declarations in each nested scope.
+
+All Header imports create names in the global space of each module.
+While exports can only refer to non-imported names living in the global
+space.
+
+Here `F` is declared in the global scope of the module, while `a` and `b`
+are declared in a separate argument scope. Finally the `do ...` lives
+in its own scope too.
+
+```
+--0--v
+proc F[a:int, b:int] do ...
+      ^-----1------^    ^--2---
+```
+
+The two following `for` expressions may create scopes that are nested
+as described, note that the `do ...` can always shadow the previously
+declared variables.
+
+```
+                       v--0--v
+for each index, item in array do ...
+         ^----1----^             ^--2---
+
+for range 0 to 10 as  i  do ...
+         ^---0---^  ^-1-^   ^--2--
+```
+
+The `switch type` behaves similarly, where the `as` keyword
+creates a new scope with a single variable that can be shadowed inside
+the `case`s.
+
+```
+---------0--v    v-1-v  v---2---
+switch type a as   x    case ... then ...
+```
+
+The `let` construct has a more complicated scope rule, in the following
+example, all variables declared inside the `let ... in` live in the
+same scope, and are evaluated in order, as they appear in text.
+
+```
+let a = 0  in ...
+   ^--0--^    ^--1---
+
+let a = 0, b = 1, c = 2 in ...
+   ^---------0---------^   ^--1---
+```
+
+While if the `let` has no `in`, the variables are declared in the
+surrouding scope:
+
+```
+let a = 0, b = 1
+--0------------^
+```
+
+Finally, a block can create a scope without declaring any variable:
+
+```
+begin  ...  end
+     ^--0--^
+```
+
 # Misc <a name="misc"/>
 
 ## Full Grammar <a name="fullgrammar"/>
@@ -2259,6 +2344,7 @@ whitespace = " " | "\t"
  - Syntax sugar for chaining (without creating closures): `a \> f[] \> g[]`
 
 # Examples <a name="examples"/>
+
 ## Rock, Paper, Scissors
 
 ```
@@ -2288,7 +2374,7 @@ proc Winner[first:*i8, second:*i8] ?*i8 do
 
 ## Json Conversion 
 
-Imagine for a brief moment that Json is sane and uses `int`s instead
+Imagine for a brief moment that Json uses `int`s instead
 of floats.
 
 ```
