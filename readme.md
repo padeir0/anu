@@ -1167,6 +1167,10 @@ evaluates `<expr>` until all items are consumed. The `<id>` name
 is valid inside `<expr>`. A second identifier might be used
 to represent other values. Both identifiers are immutable.
 
+Both identifiers are immutable. Modifying the collection should not result
+in the value of the identifiers being modified, and should not result in
+runtime errors.
+
 If the collection is an array, the type of `<id>` is the base type of
 the array, and if a second identifier is used (`for each <id>, <id> in ...`)
 The second identifier represents the index of the item, and has type `int`.
@@ -1199,7 +1203,7 @@ for range <start> to <end> as <id> do <expr>
 Where `as <id>` may be omitted. Both `<start>` and `<end>`
 must be numerical. The type of `<id>`
 is the same type as `<start>` and `<end>`.
-`<end>` is exclusive.
+`<end>` is exclusive and `<id>` is immutable.
 
 If `<start>` is bigger than `<end>`, the value
 of `<id>` starts equal to `<start>`, goes down by 1 until it
@@ -1281,9 +1285,8 @@ TypeCase = "case" TypeExprList "then" Expr
 
 The type switch is similar to the value switch but it operates on
 types, types in anu are always static. The type switch may also create an
-alias of the value being switched on, it shadows the original
-variable and is *immutable*. In the following example `as <id>` may
-be omitted.
+*immutable* alias of the value being switched on.
+In the following example `as <id>` may be omitted.
 
 ```
 switch type <expr> as <id>
@@ -1298,6 +1301,10 @@ It's type in the `then` is the sum of all types present in the `case`.
 In `<expr1>` the type of `<id>` is `<type_expr0> | ... | <type_exprN>`.
 In the `default` branch, the type of `<id>` is identical to the type of
 `<expr>`.
+
+If the `<expr>` is a mutable variable and is modified inside a `case`,
+the value of `<id>` will not change, it will remain the same as it was on
+the beginning of the switch.
 
 The output type of the `switch type` expression follows the same rules
 as the value switch.
@@ -1468,7 +1475,7 @@ assignOp = "=" | "-=" | "+=" | "*=" | "..=" | "<->" | "remove"
 All mutation in anu uses the `set` expression,
 the expression on the right side must be *assignable* to the
 expression on the left, however, the `<->` operator requires
-that both sides are *identical*.
+that both sides are *assignable*.
 There are multiple operators available to a `set` expression,
 in all cases, the right side always evaluates before the left side.
 
@@ -1675,7 +1682,8 @@ Note: `enum` always creates new types, not aliases.
 Before two types can be compared for equivalency, they must first
 be canonicalized.
 
-Types are equivalent if they're structurally identical.
+If they're *identical* they are also *equivalent*.
+Otherwise types are equivalent if they're structurally equivalent:
 
  - Two product types are *equivalent* if they have *identical* types
 layed out in the same order.
@@ -1691,7 +1699,10 @@ and the values are of *identical* types
 
 ## Assignable <a name="assignable"/>
 
-A type `T` is assignable to a type `U` if `T` and `U` are *identical*.
+A type `T` is assignable to a type `U` if:
+
+ - `T` is *equivalent* to `U`
+ - `U` is a sum and `T` is *identical* to one of the options
 
 ## Castable <a name="castable"/>
 
@@ -1700,6 +1711,7 @@ is true:
 
  - both `T` and `U` are numeric types
  - `T` is numeric and `U` is a `bool`
+ - `U` is a sum and `T` is *identical* to one of the options
  - `T` is *equivalent* to `U`
 
 ## Immutable/Mutable <a name="immutablemutable"/>
@@ -1890,10 +1902,8 @@ proc main do
   end
 ```
 
-In a `switch` expresion, aliasing borrows the variable or the contents
-of the container. If either the alias or the container
-is moved, both are moved. Aliasing shadows the original variable or
-container name, so it still has uniqueness.
+In a `switch` expresion, aliasing moves the variable or the contents
+of the container.
 
 ```
 proc main do
@@ -1902,9 +1912,9 @@ proc main do
     let z :int | &int = &a
 
     switch type z as x
-    #                ^ borrows the contents of 'z'
+    #                ^ moves the contents of 'z'
     case &int then F[x]
-    #                ^ moves the contents of both 'z' and 'x'
+    #                ^ moves the contents of 'x'
     case int then nil
 
     let abc = z
@@ -1933,7 +1943,7 @@ proc main do
 proc F[&int] do nil;
 ```
 
-The following is a valid way to operate on references inside a `for each`:
+The following is a valid way to operate on references inside a `for`:
 
 ```
 proc main do
@@ -1942,14 +1952,14 @@ proc main do
     let z = \{:*?&int &a, &b, &c}
 
     # frees all objects referenced by 'z'
-    for each _, index in z do
+    for range 0 to z.length as index do
       begin
         let v :?&int = nil
         set z[index] <-> v
         F[v]
       end
 
-    # 'z' is still valid here
+    # 'z' is still valid here (it's full of nils)
   end
 
 proc F[?&int] do nil;
