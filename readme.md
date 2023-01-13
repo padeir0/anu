@@ -2346,9 +2346,12 @@ whitespace = " " | "\t"
  - Make maps comparable and hashable
  - `target` construct for build tags aroung symbols
  - `asm` procedures and a clear, well defined ABI
+ - `with` expression for non-destructive mutation of products
+ - make strings and chars UTF8?
  - FFI?
  - Floats?
  - Bitwise operators
+ - dependency management
  - Rank 1 polymorphism and inference (inferred constraints too)
  - Some form of reflection that returns stack trace information
  - Syntax sugar for chaining (without creating closures): `a \> f[] \> g[]`

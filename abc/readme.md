@@ -31,13 +31,13 @@ Borrow Checking
   Uses HIR to validate affinity of references
   Analises lifetimes and inserts frees where it sees fit (may be another pass)
   Raises warnings for unused variables
-HIR -> MIR Transformation
+HIR -> LIR Transformation
   Flat types
   Operations only on basic types
     High level operations like copy, append, free, new* are destructured into simple procedure calls
     Type-related operations like comparison, hashing etc are destructured too
   Index based access into objects
-MIR -> LIR Transformation (reuse Millipascal's backend)
+LIR -> MDIR Transformation (reuse Millipascal's backend)
   Blobby objects
   Address based access into objects
   Explicit stack frame management
@@ -45,7 +45,7 @@ MIR -> LIR Transformation (reuse Millipascal's backend)
     Only i8, i16, i32, i64, ptr, bool and proc in the stack frame
     Callee Interprocedural, Caller Interprocedural, Spill and Local regions
   Explicit Register management
-LIR -> FASM
+MDIR -> FASM
 ```
 
 I have no fucking idea how 'mmap' works, so i will just use a 8~32Mb static memory region,
