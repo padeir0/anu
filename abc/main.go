@@ -1,6 +1,7 @@
 package main
 
 import (
+	. "abc/core"
 	"flag"
 	"fmt"
 	"os"
@@ -11,7 +12,7 @@ var printParser = flag.Bool("ast", false, "runs the up to the parser, prints AST
 var printNameResolution = flag.Bool("names", false, "runs up to name resolution, prints Module")
 var printTypeChecking = flag.Bool("types", false, "runs up to type checking, prints typed Module")
 var printLinearization = flag.Bool("hir", false, "runs up to linearization, prints HIR")
-var printMoveChecking = flag.Bool("moves", false, "runs up to move checking, prints HIR with Frees")
+var printUniqueChecking = flag.Bool("unique", false, "runs up to move checking, prints HIR with Frees")
 var printLowering = flag.Bool("lir", false, "runs up to lowering, prints LIR")
 var printAlloc = flag.Bool("mdir", false, "runs up to resalloc, prints MDIR")
 var printAsm = flag.Bool("asm", false, "runs up to amd64 backend, prints fasm")
@@ -80,9 +81,9 @@ func Compile(filename string) {
 		return
 	}
 
-	hir, errors = movechecking.Check(hir)
+	hir, errors = uniquechecking.Check(hir)
 	CheckErrors(errors)
-	if *printMoveChecking {
+	if *printUniqueChecking {
 		fmt.Println(hir)
 	}
 	if furthest == 5 {
@@ -128,7 +129,7 @@ func FurthestPhase() int {
 		*printNameResolution,
 		*printTypeChecking,
 		*printLinearization,
-		*printMoveChecking,
+		*printUniqueChecking,
 		*printLowering,
 		*printAlloc,
 		*printAsm,

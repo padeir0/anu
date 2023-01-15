@@ -2,55 +2,28 @@ package module
 
 import (
 	. "abc/core"
-	T "abc/types"
+	lk "abc/core/module/lexkind"
+	nk "abc/core/module/nodekind"
+	T "abc/core/types"
 )
-
-type LexKind int
 
 type Lexeme struct {
 	Text  string
-	Kind  LexKind
+	Kind  lk.LexKind
 	Range Range
 }
-
-type NodeKind int
-
-const (
-	InvalidNodeType NodeKind = iota
-	Terminal
-
-	ExprList
-	TypeList
-
-//  ...
-)
 
 type Node struct {
 	Lexeme *Lexeme
 	Leaves []*Node
 
 	Range Range
-	Kind  NodeKind
+	Kind  nk.NodeKind
 	Type  T.TypeID
 }
 
-type SymbolKind int
-
-const (
-	InvalidSymbolKind SymbolKind = iota
-
-	Constant
-	Type
-	Procedure
-	External
-	Argument
-	Let
-	Alias
-)
-
 type Symbol struct {
 	Name string
-	Kind SymbolKind
 
 	// Go doesn't have Sums :)
 	Const    *ConstInfo
@@ -91,20 +64,15 @@ type ExternalInfo struct {
 	SourceModule string
 }
 
-type ScopeKind int
-
-const (
-	INVALID  ScopeKind = iota
-	Universe           // depth == 0
-	Global             // depth == 1
-	Local              // depth >= 2
-)
-
+/*
+	Universe -> depth == 0
+	Global   -> depth == 1
+	Local    -> depth >= 2
+*/
 type Scope struct {
 	Parent  *Scope
 	Symbols map[string]*Symbol
 	Depth   int
-	Kind    ScopeKind
 }
 
 type Dependency struct {

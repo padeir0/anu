@@ -7,11 +7,11 @@ Hacky compiler just to get it done, i'm tired of using other languages.
 ```
      | file
      v                                      
-  --------------  module   -----------------
-  | resolution | --------> | cyclechecking |
-  --------------           -----------------
-file |      ^                      module | 
-     v      | AST                         v 
+ --------------  module   ----------------- 
+ | resolution | --------> | cyclechecking | 
+ --------------           ----------------- 
+  | file     ^                    module |  
+  v      ast |                           v  
  ------------------         ----------------
  | lexer | parser |         | typechecking |
  ------------------         ----------------
@@ -22,19 +22,16 @@ file |      ^                      module |
  -------------------       -----------------
   | hir + lifetime                          
   V                                         
- --------------  lowered hir  --------------
- | lowering A | ------------> | lowering B |
- --------------               --------------
-                                      lir | 
-                                          V 
- ------------        mdir       ------------
- | fasm gen | <---------------- | resalloc |
+ ------------         lir       ------------
+ | lowering | ----------------> | resalloc |
  ------------                   ------------
-  | fasm code                               
+                                     mdir | 
+                                          V 
+ --------          fasm code    ------------
+ | fasm | <---------------------| fasm gen |
+ --------                       ------------
+  | elf                                     
   v                                         
-  --------  elf                             
-  | fasm | ----->                           
-  --------                                  
 ```
 
 ```
@@ -56,7 +53,6 @@ Typechecker
   Internalizes the types so identity can be checked by id/pointer comparison
 Linearization: AST -> HIR Transformation
   Value flow
-  Full types
   Strings are internalized
   Constants are set in an Init procedure (that runs before main)
   Cast instructions for Unions
@@ -70,20 +66,16 @@ Unique Checking
   Uses HIR to validate uniqueness of references
   Analises lifetimes and annotates HIR
   Raises warnings for unused variables
-Lowering A
+Lowering
   Converts maps and related operations to simpler data types
+  Converts arrays to Ptr -> [size, cap, items...]
   Inserts allocs and frees
   Only basic operations
     High level operations like copy, append, free, new* are destructured into simple procedure calls
     Type-related operations like comparison, hashing etc are destructured too
       (when SIMD is introduced, some of these operations might be linked later)
-Lowering B: HIR -> LIR Transformation
-  Planar types
-  Converts arrays to Ptr -> [size, cap, items...]
-  Index based access into objects
-  Operations only on basic, Ptr and Proc types
+  Operations only on basic and Proc types
 Resalloc: LIR -> MDIR Transformation (reuse Millipascal's backend)
-  Blobby objects
   Address based access into objects
   Explicit stack frame management
     Slot based indexing into the stack frame
@@ -160,6 +152,8 @@ Instructions:
 
   _addressElement [array, index] -> value
   Index  [array, number] -> item
+  _firstPair [map] -> keyValuePair
+  _nextPair [map, currentPair] -> keyValuePair
   MapLookUp [map, key] -> item
   MapRemove [map, key] -> item
 
@@ -181,7 +175,8 @@ a instruction so lowering is easier.
 unsafe cast underneath.
  - `switch` is desugared into a chain of `if`s and unsafe casts
  - `for` and `for range` are desugared into proper branches
- - `for each` is desugared with unsafe interior pointers
+ - `for each` on arrays is desugared with unsafe interior pointers
+ - `for each` on maps is desugared into linked list iteration
  - `-=`, `+=`, `*=` already exist in three address code
  - product, array and map literals are destructured in a unsafe allocation
 plus setting each field in order

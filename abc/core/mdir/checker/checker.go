@@ -2,10 +2,10 @@ package checker
 
 import (
 	. "abc/core"
-	ir "abc/resalloc/mdir"
-	c "abc/resalloc/mdir/class"
-	IT "abc/resalloc/mdir/instrtype"
-	T "abc/resalloc/mdir/types"
+	ir "abc/core/mdir"
+	c "abc/core/mdir/class"
+	IT "abc/core/mdir/instrtype"
+	T "abc/core/types"
 
 	"strings"
 )
@@ -134,7 +134,7 @@ func (s *state) SetReg(op *ir.Operand) {
 	s.Registers.Store(op.Num, op)
 }
 
-func newCallerOperand(i int64, t T.Type) *ir.Operand {
+func newCallerOperand(i int64, t T.TypeID) *ir.Operand {
 	return &ir.Operand{
 		Class: c.CallerInterproc,
 		Num:   i,
@@ -142,7 +142,7 @@ func newCallerOperand(i int64, t T.Type) *ir.Operand {
 	}
 }
 
-func newLocalOperand(i int64, t T.Type) *ir.Operand {
+func newLocalOperand(i int64, t T.TypeID) *ir.Operand {
 	return &ir.Operand{
 		Class: c.Local,
 		Num:   i,
@@ -199,7 +199,7 @@ func checkRet(s *state) *Diagnostic {
 
 type Checker struct {
 	Class func(c.Class) bool
-	Type  func(T.Type) bool
+	Type  func(T.TypeID) bool
 }
 
 func (c *Checker) Check(op *ir.Operand) bool {

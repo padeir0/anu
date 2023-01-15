@@ -492,9 +492,9 @@ Aliases cannot be recursive, while new types can be recursive as long
 as there's a level of indirection between itself. Given the following types:
 
 ```
-type A as {.value int .next &A}
-type B is {.value int .next &B}
-type C is {.value int .next C}
+type A as {.value int, .next &A}
+type B is {.value int, .next &B}
+type C is {.value int, .next C}
 type D is *i8 -> D
 type E is *E
 type F is &F
@@ -561,11 +561,11 @@ type Json   is nil | int | *i8 | *i8->Json | *Json
 #### Products <a name="products"/>
 
 ```
-ProductType = "{" Naming+ "}"
+ProductType = "{" Naming ("," Naming)* ","? "}"
 Naming = ("." id)? UnaryType
 ```
 
-Products are made by justaposition inside brackets `{}`,
+Products are made by joining types inside brackets `{}`,
 the name of fields can be specified by the `.` operator,
 otherwise the default is latin letters in alphabetical order:
 `product.a`, `product.b`, ...,`product.z`, `product.aa`, 
@@ -575,21 +575,21 @@ otherwise the default is latin letters in alphabetical order:
  - Inside a product type `nil` is not considered.
 
 ```
-{int int} == {.a int .b int} == {.x int .y int}
+{int, int} == {.a int, .b int} == {.x int, .y int}
 {int} == int
-{nil int} == int
-{nil nil int} == int
+{nil, int} == int
+{nil, nil, int} == int
 
-{T U} != {U T}
+{T, U} != {U, T}
 ```
 
 Product types are canonicalized like so:
 
 ```
 {T}         => T
-{nil T}     => T
-{nil nil T} => T
-{nil U T}   => {U T}
+{nil, T}     => T
+{nil, nil, T} => T
+{nil, U, T}   => {U T}
 ```
 
 Operations on product types are field access `product.field`, comparison `==`
@@ -749,14 +749,14 @@ type YesOrNo is Yes | No
 Enums may contain other information inside it:
 
 ```
-type Something enum One is {int int},
+type Something enum One is {int, int},
                     Two
 ```
 
 Can be desugared to:
 
 ```
-type One is {int int}
+type One is {int, int}
 type Two is nil
 type Something is One | Two
 ```
@@ -1073,17 +1073,17 @@ the type must match the respectively named field in the type.
 Example of valid explicitly typed product literals:
 
 ```
-const a = {:{int int} 1, 2}
-const b = {:{int *i8 int} 1, "a", 2}
-const c = {:{.a int .b *i8} b = "second", a = 1}
+const a = {:{int, int} 1, 2}
+const b = {:{int, *i8, int} 1, "a", 2}
+const c = {:{.a int, .b *i8} b = "second", a = 1}
 ```
 
 Example of invalid explicitly typed product literals:
 
 ```
-const a = {:{int int} 1}
-const b = {:{int *i8 int} "a", 1, 2}
-const c = {:{.a int .b *i8} c = "second", a = 1}
+const a = {:{int, int} 1}
+const b = {:{int, *i8, int} "a", 1, 2}
+const c = {:{.a int, .b *i8} c = "second", a = 1}
 ```
 
 When inferred, the resulting product has type equal to the
@@ -1093,9 +1093,9 @@ the order matters.
 Example of types inferred from product literals:
 
 ```
-const a :{int int} = {1, 2}
-const b :{*i8 int} = {"a", 2}
-const c :{.b int .a int} = {b = 2, a = 1}
+const a :{int, int} = {1, 2}
+const b :{*i8, int} = {"a", 2}
+const c :{.b int, .a int} = {b = 2, a = 1}
 ```
 
 ### Array/Map Literal <a name="arraymapliteral"/>
@@ -1637,7 +1637,7 @@ to the type specified in `new`
 
 ```
 type BigDataStructure is {
-  int int int int int int
+  int, int, int, int, int, int
 }
 
 proc main do
@@ -2001,7 +2001,7 @@ proc F do
   begin
     let a = 1;
     let b = 2;
-    let c :?{&int &int} = {&a, &b}
+    let c :?{&int, &int} = {&a, &b}
     set c = nil # `a` and `b` are freed
   end
 ```
@@ -2221,17 +2221,15 @@ EnumOption = id ("is" TypeExpr)?
 
 TypeExpr = Map ("|" Map)*
 Map = TypeFactor ("->" TypeFactor)*
-TypeFactor = ProductType | UnaryType
-ProductType = "{" Naming+ "}"
-Naming = ("." id)? UnaryType
-UnaryType = TypePrefix* SingleType
-SingleType = Name | NestedType | ProcType | nil
+TypeFactor = TypePrefix* SingleType
+SingleType = Name | NestedType | ProcType | ProductType | nil
 TypePrefix = Ref | ArrayType | Optional
 ArrayType = "*"
 Optional = "?"
 Ref = "&"
+ProductType = "{" Naming ("," Naming)* ","? "}"
+Naming = ("." id)? UnaryType
 NestedType = "(" TypeExpr ")"
-
 ProcType = "proc" TypeArguments TypeExpr
 TypeArguments = "[" TypeExprList? "]"
 
@@ -2342,7 +2340,6 @@ whitespace = " " | "\t"
 
 ## Future <a name="future"/>
 
- - Fix type syntax: products with commas `{int, int}` and allow unions inside `{T|U, T}`
  - Make maps comparable and hashable
  - `target` construct for build tags aroung symbols
  - `asm` procedures and a clear, well defined ABI
@@ -2394,8 +2391,8 @@ of floats.
 type Json is bool | int | nil | *i8 | *i8 -> Json | *Json
 
 type Person is {
-    .name *i8
-    .age int
+    .name *i8,
+    .age int,
 }
 
 proc JsonToPerson[j:Json] ?*Person do

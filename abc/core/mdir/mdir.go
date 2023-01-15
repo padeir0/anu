@@ -4,12 +4,13 @@ import (
 	. "abc/core"
 	c "abc/core/mdir/class"
 	it "abc/core/mdir/instrtype"
-	T "abc/core/planartypes"
+	T "abc/core/types"
 	"strconv"
 )
 
 type Program struct {
-	Symbols []*Symbol
+	Symbols   []*Symbol
+	TypeSpace T.TypeSpace
 }
 
 func (this *Program) FindSymbol(i int64) (*Symbol, *Diagnostic) {
@@ -32,8 +33,38 @@ type Symbol struct {
 
 type Proc struct {
 	Label string
-	Type  *T.ProcType
+	Type  T.TypeID
+
+	// stack frame layout
+	Arguments []T.TypeID
+	Returns   []T.TypeID
+	Locals    []T.TypeID
+
 	Start *BasicBlock
+}
+
+func (p *Proc) StrRets() string {
+	return StrTypes(p.Returns)
+}
+func (p *Proc) StrArgs() string {
+	return StrTypes(p.Arguments)
+}
+func (p *Proc) StrLocals() string {
+	return StrTypes(p.Locals)
+}
+
+func StrTypes(tps []T.TypeID) string {
+	if len(tps) == 0 {
+		return ""
+	}
+	if len(tps) == 1 {
+		return tps[0].String()
+	}
+	output := tps[0].String()
+	for _, t := range tps {
+		output += ", " + t.String()
+	}
+	return output
 }
 
 func (p *Proc) ResetVisited() {
@@ -60,7 +91,7 @@ func resetVisitedBB(bb *BasicBlock) {
 type Mem struct {
 	Label string
 	Data  string
-	Type  *T.Type
+	Type  *T.TypeID
 	Size  int
 }
 
@@ -73,7 +104,7 @@ type BasicBlock struct {
 
 type Instr struct {
 	T    it.InstrType
-	Type T.BasicType // type operand (casts)
+	Type T.TypeID // type operand (casts)
 	A    *Operand
 	B    *Operand
 	Dest *Operand
@@ -81,7 +112,7 @@ type Instr struct {
 
 func (this *Instr) String() string {
 	output := this.T.String()
-	if T.IsValid(this.Type) {
+	if this.Type.IsValid() {
 		output += ":" + this.Type.String()
 	}
 	if this.A != nil {
@@ -102,7 +133,7 @@ func (this *Instr) String() string {
 
 type Operand struct {
 	Class c.Class
-	Type  T.Type
+	Type  T.TypeID
 	Num   int64
 }
 

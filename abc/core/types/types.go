@@ -9,20 +9,23 @@ type TypeKind int
 
 const (
 	InvalidTypeKind TypeKind = iota
-	Sum
-	Product
-	Array
-	Map
-	Proc
-	Reference
-	Option
-	Basic // basic has no structure
-	Named // named has structure
+
+	Sum       // [possibility0Type, possibility1Type, ..., possibilityNType]
+	Product   // [field0Type, field1Type, ..., fieldNType]
+	Array     // [baseType]
+	Map       // [keyType, valueType]
+	Proc      // [Arg0Type, Arg1Type, ..., ArgNType, RetType]
+	Reference // [baseType]
+	Option    // [baseType]
+	Basic     // [] (basic has no structure, except for Ptr)
+	Named     // [baseType] (named has structure)
 )
 
 type TypeStructure struct {
 	Kind      TypeKind
 	Structure []TypeID
+	TagSize   int // for unions only
+	Size      int // computed on lowering phases
 }
 
 func (this *TypeStructure) BaseType() TypeID {
@@ -62,6 +65,30 @@ func (this *TypeStructure) equals(other *TypeStructure) bool {
 // TypeID is an index inside the TypeSpace.allTypes array
 type TypeID int
 
+func (this TypeID) String() string {
+	switch this {
+	case Void:
+		return "void"
+	case Nil:
+		return "nil"
+	case Bool:
+		return "bool"
+	case I8:
+		return "i8"
+	case I16:
+		return "i16"
+	case I32:
+		return "i32"
+	case I64:
+		return "i64"
+	case Ptr:
+		return "$ptr"
+	case Int:
+		return "int"
+	}
+	return strconv.FormatInt(int64(this), 10)
+}
+
 const (
 	InvalidTypeID TypeID = iota
 	Void
@@ -71,6 +98,9 @@ const (
 	I16
 	I32
 	I64
+	Ptr // (raw pointer for internal usage only)
+	// preserves the type structure so we can validate
+	// transformations
 	Int
 	last
 )
@@ -88,6 +118,7 @@ func NewTypeSpace() *TypeSpace {
 	alltypes[I16] = newBasicType("i16", I16)
 	alltypes[I32] = newBasicType("i32", I32)
 	alltypes[I64] = newBasicType("i64", I64)
+	alltypes[Ptr] = newBasicType("$ptr", I64)
 	alltypes[Int] = newBasicType("int", Int)
 
 	basictypes := map[QualifiedName]TypeID{
@@ -98,6 +129,7 @@ func NewTypeSpace() *TypeSpace {
 		{SymbolName: "i16"}:  I16,
 		{SymbolName: "i32"}:  I32,
 		{SymbolName: "i64"}:  I64,
+		{SymbolName: "$ptr"}: Ptr,
 		{SymbolName: "int"}:  Int,
 	}
 
@@ -124,10 +156,11 @@ func (this QualifiedName) String() string {
 }
 
 // to compare by identity just compare TypeID
-// to compare two named, take the underlying TypeID and compare
-// to compare one named and one unamed,
-// take the underlying TypeID from the named one
-// and the TypeID of the unamed one
+// to compare by equivalency:
+//     two named: take the underlying TypeID and compare
+//     named with unamed: take the underlying TypeID from the named one
+//         and the TypeID of the unamed one
+//     two unamed: compare TypeID
 type TypeSpace struct {
 	// all types unique by type identity
 	allTypes []*TypeWithName
@@ -143,7 +176,7 @@ func (this *TypeSpace) Named(name *QualifiedName) TypeID {
 	if ok {
 		return v
 	}
-	id := this.PushType(&TypeWithName{Name: name, TypeStructure: nil})
+	id := this.pushType(&TypeWithName{Name: name, TypeStructure: nil})
 	this.named[*name] = id
 	return id
 }
@@ -167,7 +200,7 @@ func (this *TypeSpace) Unamed(ts *TypeStructure) TypeID {
 		return id
 	}
 
-	id = this.PushType(&TypeWithName{Name: nil, TypeStructure: newTS})
+	id = this.pushType(&TypeWithName{Name: nil, TypeStructure: newTS})
 	this.tmap.Insert(newTS, id)
 
 	return id
@@ -180,7 +213,7 @@ func (this *TypeSpace) GetStructure(id TypeID) *TypeStructure {
 	return this.allTypes[id].TypeStructure
 }
 
-func (this *TypeSpace) PushType(info *TypeWithName) TypeID {
+func (this *TypeSpace) pushType(info *TypeWithName) TypeID {
 	if this.top >= len(this.allTypes) {
 		this.allTypes = append(this.allTypes, make([]*TypeWithName, len(this.allTypes))...)
 	}
