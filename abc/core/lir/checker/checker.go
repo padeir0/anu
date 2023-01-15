@@ -1,19 +1,16 @@
-package hirchecker
+package checker
 
 import (
-	T "mpc/frontend/Type"
-	hirc "mpc/frontend/enums/HIRClass"
-	FT "mpc/frontend/enums/flowType"
-	IT "mpc/frontend/enums/instrType"
-	ST "mpc/frontend/enums/symbolType"
-	"mpc/frontend/errors"
-	"mpc/frontend/ir"
-	eu "mpc/frontend/util/errors"
+	eu "abc/core"
+	ir "abc/core/lir"
+	hirc "abc/core/lir/class"
+	IT "abc/core/lir/instrtype"
+	T "abc/core/planartypes"
 
 	"strconv"
 )
 
-func Check(M *ir.Module) *errors.CompilerError {
+func Check(M *ir.Program) *eu.Diagnostic {
 	err := check(M)
 	if err != nil {
 		return err
@@ -23,7 +20,7 @@ func Check(M *ir.Module) *errors.CompilerError {
 	return nil
 }
 
-func check(M *ir.Module) *errors.CompilerError {
+func check(M *ir.Program) *eu.Diagnostic {
 	for _, dep := range M.Dependencies {
 		err := check(dep.M)
 		if err != nil {
@@ -45,18 +42,18 @@ func check(M *ir.Module) *errors.CompilerError {
 }
 
 type state struct {
-	m    *ir.Module
+	m    *ir.Program
 	proc *ir.Proc
 	bb   *ir.BasicBlock
 }
 
-func newState(M *ir.Module) *state {
+func newState(M *ir.Program) *state {
 	return &state{
 		m: M,
 	}
 }
 
-func checkCode(s *state, bb *ir.BasicBlock) *errors.CompilerError {
+func checkCode(s *state, bb *ir.BasicBlock) *eu.Diagnostic {
 	if bb.Visited {
 		return nil
 	}
@@ -71,7 +68,7 @@ func checkCode(s *state, bb *ir.BasicBlock) *errors.CompilerError {
 	return checkJump(s)
 }
 
-func checkJump(s *state) *errors.CompilerError {
+func checkJump(s *state) *eu.Diagnostic {
 	bb := s.bb
 	switch bb.Out.T {
 	case FT.Jmp:
@@ -90,7 +87,7 @@ func checkJump(s *state) *errors.CompilerError {
 	return invalidFlow(bb.Out)
 }
 
-func checkRet(s *state, rets []*ir.Operand) *errors.CompilerError {
+func checkRet(s *state, rets []*ir.Operand) *eu.Diagnostic {
 	if len(s.proc.Rets) != len(rets) {
 		has := strconv.Itoa(len(rets))
 		wants := strconv.Itoa(len(s.proc.Rets))
@@ -107,7 +104,7 @@ func checkRet(s *state, rets []*ir.Operand) *errors.CompilerError {
 	return nil
 }
 
-func checkExit(s *state, branch ir.Flow) *errors.CompilerError {
+func checkExit(s *state, branch ir.Flow) *eu.Diagnostic {
 	if branch.V == nil {
 		return eu.NewInternalSemanticError("invalid exit with zero operands")
 	}
@@ -179,7 +176,7 @@ var ptr_res = Checker{
 	Type:  T.IsPtr,
 }
 
-func checkInstr(s *state, instr *ir.Instr) *errors.CompilerError {
+func checkInstr(s *state, instr *ir.Instr) *eu.Diagnostic {
 	switch instr.T {
 	case IT.Add, IT.Sub, IT.Div, IT.Mult, IT.Rem:
 		return checkArith(instr)
@@ -207,7 +204,7 @@ func checkInstr(s *state, instr *ir.Instr) *errors.CompilerError {
 	panic("sumthin' went wong")
 }
 
-func checkArith(instr *ir.Instr) *errors.CompilerError {
+func checkArith(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 2, true)
 	if err != nil {
 		return err
@@ -222,7 +219,7 @@ func checkArith(instr *ir.Instr) *errors.CompilerError {
 	return checkBinary(instr, num_oper, num_oper, num_res)
 }
 
-func checkComp(instr *ir.Instr) *errors.CompilerError {
+func checkComp(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 2, true)
 	if err != nil {
 		return err
@@ -236,7 +233,7 @@ func checkComp(instr *ir.Instr) *errors.CompilerError {
 	return checkBinary(instr, basic_oper, basic_oper, bool_res)
 }
 
-func checkLogical(instr *ir.Instr) *errors.CompilerError {
+func checkLogical(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 2, true)
 	if err != nil {
 		return err
@@ -251,7 +248,7 @@ func checkLogical(instr *ir.Instr) *errors.CompilerError {
 	return checkBinary(instr, bool_oper, bool_oper, bool_res)
 }
 
-func checkUnaryArith(instr *ir.Instr) *errors.CompilerError {
+func checkUnaryArith(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 1, true)
 	if err != nil {
 		return err
@@ -265,7 +262,7 @@ func checkUnaryArith(instr *ir.Instr) *errors.CompilerError {
 	return checkUnary(instr, num_oper, num_res)
 }
 
-func checkNot(instr *ir.Instr) *errors.CompilerError {
+func checkNot(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 1, true)
 	if err != nil {
 		return err
@@ -279,7 +276,7 @@ func checkNot(instr *ir.Instr) *errors.CompilerError {
 	return checkUnary(instr, bool_oper, bool_res)
 }
 
-func checkConvert(instr *ir.Instr) *errors.CompilerError {
+func checkConvert(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 1, true)
 	if err != nil {
 		return err
@@ -292,7 +289,7 @@ func checkConvert(instr *ir.Instr) *errors.CompilerError {
 	return checkUnary(instr, basic_oper, basic_res)
 }
 
-func checkCopy(instr *ir.Instr) *errors.CompilerError {
+func checkCopy(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 1, true)
 	if err != nil {
 		return err
@@ -311,7 +308,7 @@ func checkCopy(instr *ir.Instr) *errors.CompilerError {
 	return nil
 }
 
-func checkLoadPtr(instr *ir.Instr) *errors.CompilerError {
+func checkLoadPtr(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 1, true)
 	if err != nil {
 		return err
@@ -321,7 +318,7 @@ func checkLoadPtr(instr *ir.Instr) *errors.CompilerError {
 	return checkUnary(instr, ptr_oper, basic_res)
 }
 
-func checkStorePtr(instr *ir.Instr) *errors.CompilerError {
+func checkStorePtr(instr *ir.Instr) *eu.Diagnostic {
 	err := checkForm(instr, 2, false)
 	if err != nil {
 		return err
@@ -338,7 +335,7 @@ func checkStorePtr(instr *ir.Instr) *errors.CompilerError {
 	return malformedTypeOrClass(instr)
 }
 
-func checkCall(s *state, instr *ir.Instr) *errors.CompilerError {
+func checkCall(s *state, instr *ir.Instr) *eu.Diagnostic {
 	if len(instr.Operands) == 0 {
 		return malformedInstr(instr)
 	}
@@ -373,7 +370,7 @@ func checkCall(s *state, instr *ir.Instr) *errors.CompilerError {
 	return nil
 }
 
-func checkEqual(instr *ir.Instr, types ...*T.Type) *errors.CompilerError {
+func checkEqual(instr *ir.Instr, types ...*T.Type) *eu.Diagnostic {
 	if len(types) == 0 {
 		return nil
 	}
@@ -386,7 +383,7 @@ func checkEqual(instr *ir.Instr, types ...*T.Type) *errors.CompilerError {
 	return nil
 }
 
-func checkBinary(instr *ir.Instr, checkA, checkB, checkC Checker) *errors.CompilerError {
+func checkBinary(instr *ir.Instr, checkA, checkB, checkC Checker) *eu.Diagnostic {
 	a := instr.Operands[0]
 	b := instr.Operands[1]
 	dest := instr.Destination[0]
@@ -399,7 +396,7 @@ func checkBinary(instr *ir.Instr, checkA, checkB, checkC Checker) *errors.Compil
 	return malformedTypeOrClass(instr)
 }
 
-func checkUnary(instr *ir.Instr, checkA, checkC Checker) *errors.CompilerError {
+func checkUnary(instr *ir.Instr, checkA, checkC Checker) *eu.Diagnostic {
 	a := instr.Operands[0]
 	dest := instr.Destination[0]
 
@@ -410,7 +407,7 @@ func checkUnary(instr *ir.Instr, checkA, checkC Checker) *errors.CompilerError {
 	return malformedTypeOrClass(instr)
 }
 
-func checkForm(instr *ir.Instr, numOperands int, hasDest bool) *errors.CompilerError {
+func checkForm(instr *ir.Instr, numOperands int, hasDest bool) *eu.Diagnostic {
 	if len(instr.Operands) != numOperands {
 		return malformedInstr(instr)
 	}
@@ -425,40 +422,40 @@ func checkForm(instr *ir.Instr, numOperands int, hasDest bool) *errors.CompilerE
 	return nil
 }
 
-func malformedInstr(instr *ir.Instr) *errors.CompilerError {
+func malformedInstr(instr *ir.Instr) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("malformed instruction: " + instr.String())
 }
-func malformedEqualTypes(instr *ir.Instr) *errors.CompilerError {
+func malformedEqualTypes(instr *ir.Instr) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("unequal types: " + instr.String())
 }
-func malformedTypeOrClass(instr *ir.Instr) *errors.CompilerError {
+func malformedTypeOrClass(instr *ir.Instr) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("malformed type or class: " + instr.String())
 }
-func procArgNotFound(instr *ir.Instr, d *ir.Symbol) *errors.CompilerError {
+func procArgNotFound(instr *ir.Instr, d *ir.Symbol) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("argument " + d.Name + " not found in: " + instr.String())
 }
-func procInvalidNumOfArgs(instr *ir.Instr, p *T.ProcType) *errors.CompilerError {
+func procInvalidNumOfArgs(instr *ir.Instr, p *T.ProcType) *eu.Diagnostic {
 	n := strconv.Itoa(len(p.Args))
 	beepBop := strconv.Itoa(len(instr.Operands) - 1)
 	return eu.NewInternalSemanticError("expected " + n + " arguments, instead found: " + beepBop)
 }
-func procInvalidNumOfRets(instr *ir.Instr, p *T.ProcType) *errors.CompilerError {
+func procInvalidNumOfRets(instr *ir.Instr, p *T.ProcType) *eu.Diagnostic {
 	n := strconv.Itoa(len(p.Rets))
 	beepBop := strconv.Itoa(len(instr.Destination))
 	return eu.NewInternalSemanticError("expected " + n + " returns, instead found: " + beepBop)
 }
-func procBadArg(instr *ir.Instr, d *T.Type, op *ir.Operand) *errors.CompilerError {
+func procBadArg(instr *ir.Instr, d *T.Type, op *ir.Operand) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("argument " + op.String() + " doesn't match formal parameter (" + d.String() + ") in: " + instr.String())
 }
-func procBadRet(instr *ir.Instr, d *T.Type, op *ir.Operand) *errors.CompilerError {
+func procBadRet(instr *ir.Instr, d *T.Type, op *ir.Operand) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("return " + op.String() + " doesn't match formal return " + d.String() + " in: " + instr.String())
 }
-func invalidMirInstr(i *ir.Instr) *errors.CompilerError {
+func invalidMirInstr(i *ir.Instr) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("invalid MIR Instr: " + i.String())
 }
-func invalidFlow(f ir.Flow) *errors.CompilerError {
+func invalidFlow(f ir.Flow) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("invalid flow: " + f.String())
 }
-func expectedProc(instr *ir.Instr, o *ir.Operand) *errors.CompilerError {
+func expectedProc(instr *ir.Instr, o *ir.Operand) *eu.Diagnostic {
 	return eu.NewInternalSemanticError("expected procedure in: " + instr.String() + ", instead found: " + o.String())
 }

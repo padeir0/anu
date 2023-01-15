@@ -1,0 +1,6 @@
+proc fact[n:int] int do
+	if n == 0 then 1
+	else n * fact[n-1]
+
+proc main do
+	if fact[4] != 24 then exit[2]

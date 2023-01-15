@@ -1,29 +1,39 @@
 package mdir
 
 import (
-	c "abc/backend/mdir/class"
-	it "abc/backend/mdir/instrtype"
-	T "abc/backend/mdir/types"
+	. "abc/core"
+	c "abc/core/mdir/class"
+	it "abc/core/mdir/instrtype"
+	T "abc/core/planartypes"
 	"strconv"
 )
 
 type Program struct {
-	Static []*Symbol
+	Symbols []*Symbol
+}
+
+func (this *Program) FindSymbol(i int64) (*Symbol, *Diagnostic) {
+	if i < 0 || i >= int64(len(this.Symbols)) {
+		return nil, NewInternalError("Index out of bounds for Symbols Array")
+	}
+	sy := this.Symbols[i]
+	if sy == nil {
+		return nil, NewInternalError("Symbol not found in program: " + strconv.FormatInt(i, 10))
+	}
+	return sy, nil
 }
 
 // Symbol = Procedure | Memory
 // but since Go doesn't have sums
 type Symbol struct {
-	Label string
-	Proc  *Proc
-	Mem   *Mem
+	Proc *Proc
+	Mem  *Mem
 }
 
 type Proc struct {
-	Arguments []T.Type
-	Returns   []T.Type
-	Locals    []T.Type
-	Start     *BasicBlock
+	Label string
+	Type  *T.ProcType
+	Start *BasicBlock
 }
 
 func (p *Proc) ResetVisited() {
@@ -48,8 +58,10 @@ func resetVisitedBB(bb *BasicBlock) {
 
 // Mem = Reserved | Declared
 type Mem struct {
-	Data string
-	Size int
+	Label string
+	Data  string
+	Type  *T.Type
+	Size  int
 }
 
 type BasicBlock struct {
@@ -61,10 +73,31 @@ type BasicBlock struct {
 
 type Instr struct {
 	T    it.InstrType
-	Type T.Type
+	Type T.BasicType // type operand (casts)
 	A    *Operand
 	B    *Operand
 	Dest *Operand
+}
+
+func (this *Instr) String() string {
+	output := this.T.String()
+	if T.IsValid(this.Type) {
+		output += ":" + this.Type.String()
+	}
+	if this.A != nil {
+		output += " " + this.A.String()
+		if this.B != nil {
+			output += " " + this.B.String()
+		}
+	} else {
+		if this.B != nil {
+			output += " ???, " + this.B.String()
+		}
+	}
+	if this.Dest != nil {
+		output += " -> " + this.Dest.String()
+	}
+	return output
 }
 
 type Operand struct {

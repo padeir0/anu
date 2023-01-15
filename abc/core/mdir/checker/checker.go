@@ -1,18 +1,17 @@
 package checker
 
 import (
-	ir "abc/backend/mdir"
-	c "abc/backend/mdir/class"
-	IT "abc/backend/mdir/instrtype"
-	T "abc/backend/mdir/types"
 	. "abc/core"
+	ir "abc/resalloc/mdir"
+	c "abc/resalloc/mdir/class"
+	IT "abc/resalloc/mdir/instrtype"
+	T "abc/resalloc/mdir/types"
 
-	"strconv"
 	"strings"
 )
 
 func Check(M *ir.Program) *Diagnostic {
-	for _, sy := range M.Static {
+	for _, sy := range M.Symbols {
 		if sy.Proc != nil {
 			s := newState(M)
 			s.proc = sy.Proc
@@ -63,9 +62,9 @@ func (r region) Clear(i int) {
 }
 
 type state struct {
-	m    *ir.Program
-	proc *ir.Proc
-	bb   *ir.BasicBlock
+	program *ir.Program
+	proc    *ir.Proc
+	bb      *ir.BasicBlock
 
 	CalleeInterproc region
 	CallerInterproc region
@@ -74,9 +73,9 @@ type state struct {
 	Locals          region
 }
 
-func newState(M *ir.Program) *state {
+func newState(P *ir.Program) *state {
 	return &state{
-		m:               M,
+		program:         P,
 		CalleeInterproc: newRegion(8),
 		CallerInterproc: newRegion(8),
 		Spill:           newRegion(8),
@@ -97,7 +96,7 @@ func (s *state) Init() {
 }
 
 func (s *state) String() string {
-	return s.proc.Name + s.bb.Label + "\n" +
+	return s.proc.Label + s.bb.Label + "\n" +
 		"callee: " + s.CalleeInterproc.String() + "\n" +
 		"caller: " + s.CallerInterproc.String() + "\n" +
 		"spill: " + s.Spill.String() + "\n" +
@@ -123,7 +122,7 @@ func (s *state) Copy() *state {
 		Registers:       registers,
 		Locals:          locals,
 		bb:              s.bb,
-		m:               s.m,
+		program:         s.program,
 		proc:            s.proc,
 	}
 }
@@ -188,10 +187,10 @@ func checkRet(s *state) *Diagnostic {
 	for i, ret := range s.proc.Returns {
 		op := s.CallerInterproc.Load(int64(i))
 		if op == nil {
-			return eu.NewInternalSemanticError("return stack is empty, expected returns: " + s.proc.StrRets())
+			return NewInternalError("return stack is empty, expected returns: " + s.proc.StrRets())
 		}
-		if !ret.Equals(op.Type) {
-			return eu.NewInternalSemanticError("return of type " + ret.String() + " doesn't match value in stack: " + s.CallerInterproc.String())
+		if ret != op.Type {
+			return NewInternalError("return of type " + ret.String() + " doesn't match value in stack: " + s.CallerInterproc.String())
 		}
 		s.CallerInterproc.Clear(i)
 	}
@@ -204,7 +203,7 @@ type Checker struct {
 }
 
 func (c *Checker) Check(op *ir.Operand) bool {
-	return c.Type(op.Type) && c.Class(op.Mirc)
+	return c.Type(op.Type) && c.Class(op.Class)
 }
 
 var basicOrProc_imme = Checker{
@@ -222,19 +221,14 @@ var basicOrProc_addr = Checker{
 	Type:  T.IsValid,
 }
 
-var basic_imme = Checker{
+var castable_imme = Checker{
 	Class: c.IsImmediate,
-	Type:  T.IsBasic,
+	Type:  T.IsCastable,
 }
 
-var basic_reg = Checker{
+var castable_reg = Checker{
 	Class: c.IsRegister,
-	Type:  T.IsBasic,
-}
-
-var basic_addr = Checker{
-	Class: c.IsAddressable,
-	Type:  T.IsBasic,
+	Type:  T.IsCastable,
 }
 
 var num_imme = Checker{
@@ -284,7 +278,7 @@ func checkInstr(s *state, instr *ir.Instr) *Diagnostic {
 		return checkLogical(s, instr)
 	case IT.Not:
 		return checkNot(s, instr)
-	case IT.UnaryMinus, IT.UnaryPlus:
+	case IT.Neg:
 		return checkUnaryArith(s, instr)
 	case IT.Convert:
 		return checkConvert(s, instr)
@@ -305,21 +299,18 @@ func checkInstr(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkArith(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 2, 1)
+	err := checkForm(instr, true, true, true)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	b := instr.Operands[1]
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, a.Type, b.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type, instr.B.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
@@ -327,43 +318,37 @@ func checkArith(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkComp(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 2, 1)
+	err := checkForm(instr, true, true, true)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	b := instr.Operands[1]
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, a.Type, b.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type, instr.B.Type)
 	if err != nil {
 		return err
 	}
-	return checkBinary(instr, basic_imme, basic_imme, bool_reg)
+	return checkBinary(instr, castable_imme, castable_imme, bool_reg)
 }
 
 func checkLogical(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 2, 1)
+	err := checkForm(instr, true, true, true)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	b := instr.Operands[1]
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, a.Type, b.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type, instr.B.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
@@ -371,20 +356,18 @@ func checkLogical(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkUnaryArith(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 1, 1)
+	err := checkForm(instr, true, false, true)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, a.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
@@ -392,20 +375,18 @@ func checkUnaryArith(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkNot(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 1, 1)
+	err := checkForm(instr, true, false, true)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, a.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
@@ -413,39 +394,37 @@ func checkNot(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkConvert(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 1, 1)
+	err := checkForm(instr, true, false, true)
 	if err != nil {
 		return err
 	}
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
-	return checkUnary(instr, basic_imme, basic_reg)
+	return checkUnary(instr, castable_imme, castable_reg)
 }
 
 func checkLoadPtr(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 1, 1)
+	err := checkForm(instr, true, false, true)
 	if err != nil {
 		return err
 	}
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
@@ -453,40 +432,36 @@ func checkLoadPtr(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkStorePtr(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 2, 0)
+	err := checkForm(instr, true, true, false)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	dest := instr.Operands[1]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
 
-	err = checkEqual(instr, instr.Type, a.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type)
 	if err != nil {
 		return err
 	}
-	if basicOrProc_imme.Check(a) &&
-		ptr_imme.Check(dest) {
+	if basicOrProc_imme.Check(instr.A) &&
+		ptr_imme.Check(instr.Dest) {
 		return nil
 	}
 	return malformedTypeOrClass(instr)
 }
 
 func checkLoad(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 1, 1)
+	err := checkForm(instr, true, false, true)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	dest := instr.Destination[0]
 
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, a.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
@@ -499,19 +474,17 @@ func checkLoad(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkStore(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 1, 1)
+	err := checkForm(instr, true, false, true)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
 
-	err = checkEqual(instr, instr.Type, a.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
@@ -524,20 +497,18 @@ func checkStore(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkCopy(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 1, 1)
+	err := checkForm(instr, true, false, true)
 	if err != nil {
 		return err
 	}
-	a := instr.Operands[0]
-	dest := instr.Destination[0]
 
 	err = checkRegs(s, instr)
 	if err != nil {
 		return err
 	}
-	s.SetReg(dest)
+	s.SetReg(instr.Dest)
 
-	err = checkEqual(instr, instr.Type, a.Type, dest.Type)
+	err = checkEqual(instr, instr.Type, instr.A.Type, instr.Dest.Type)
 	if err != nil {
 		return err
 	}
@@ -550,54 +521,56 @@ func checkCopy(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkCall(s *state, instr *ir.Instr) *Diagnostic {
-	err := checkForm(instr, 1, 0)
+	err := checkForm(instr, true, false, false)
 	if err != nil {
 		return err
 	}
-	procOp := instr.Operands[0]
-	if procOp.Symbol == nil {
-		return procNotFound(instr)
-	}
-	proc := procOp.Type.Proc
 
-	for i, formal_arg := range proc.Args {
+	sy, err := s.program.FindSymbol(instr.A.Num)
+	if err != nil {
+		return err
+	}
+
+	if sy.Proc == nil {
+		return notAProc(instr)
+	}
+
+	for i, formal_arg := range sy.Proc.Arguments {
 		real_arg := s.CalleeInterproc.Load(int64(i))
 		if real_arg == nil {
 			return errorCallLoadingGarbage(instr)
 		}
-		if !formal_arg.Equals(real_arg.Type) {
+		if formal_arg != real_arg.Type {
 			return procBadArg(instr, formal_arg, real_arg)
 		}
 		s.CalleeInterproc.Clear(i)
 	}
 
-	for i, formal_ret := range proc.Rets {
-		op := &ir.Operand{Mirc: c.CalleeInterproc, Num: int64(i), Type: formal_ret}
+	for i, formal_ret := range sy.Proc.Returns {
+		op := &ir.Operand{Class: c.CalleeInterproc, Num: int64(i), Type: formal_ret}
 		s.CalleeInterproc.Store(int64(i), op)
 	}
 	return nil
 }
 
 func checkLoadState(s *state, instr *ir.Instr) *Diagnostic {
-	loadOp := instr.Operands[0]
-	dest := instr.Destination[0]
 	var source *ir.Operand
-	switch loadOp.Mirc {
+	switch instr.A.Class {
 	case c.Spill:
-		source = s.Spill.Load(loadOp.Num)
+		source = s.Spill.Load(instr.A.Num)
 	case c.CalleeInterproc:
-		source = s.CalleeInterproc.Load(loadOp.Num)
+		source = s.CalleeInterproc.Load(instr.A.Num)
 	case c.CallerInterproc:
-		source = s.CallerInterproc.Load(loadOp.Num)
+		source = s.CallerInterproc.Load(instr.A.Num)
 	case c.Local:
-		source = s.Locals.Load(loadOp.Num)
+		source = s.Locals.Load(instr.A.Num)
 	default:
 		panic("oh no")
 	}
 	if source == nil {
 		return errorLoadingGarbage(instr)
 	}
-	err := checkEqual(instr, dest.Type, source.Type)
+	err := checkEqual(instr, instr.Dest.Type, source.Type)
 	if err != nil {
 		return err
 	}
@@ -605,17 +578,15 @@ func checkLoadState(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkStoreState(s *state, instr *ir.Instr) *Diagnostic {
-	source := instr.Operands[0]
-	dest := instr.Destination[0]
-	switch dest.Mirc {
+	switch instr.Dest.Class {
 	case c.Spill:
-		s.Spill.Store(dest.Num, source)
+		s.Spill.Store(instr.Dest.Num, instr.A)
 	case c.CalleeInterproc:
-		s.CalleeInterproc.Store(dest.Num, source)
+		s.CalleeInterproc.Store(instr.Dest.Num, instr.A)
 	case c.CallerInterproc:
-		s.CallerInterproc.Store(dest.Num, source)
+		s.CallerInterproc.Store(instr.Dest.Num, instr.A)
 	case c.Local:
-		s.Locals.Store(dest.Num, source)
+		s.Locals.Store(instr.Dest.Num, instr.A)
 	default:
 		panic("oh no")
 	}
@@ -623,28 +594,40 @@ func checkStoreState(s *state, instr *ir.Instr) *Diagnostic {
 }
 
 func checkRegs(s *state, instr *ir.Instr) *Diagnostic {
-	for _, op := range instr.Operands {
-		switch op.Mirc {
-		case c.Register:
-			o := s.Registers.Load(op.Num)
-			if o == nil {
-				return errorUsingRegisterGarbage(instr, op)
-			}
-			if o.Num != op.Num || o.Mirc != op.Mirc || !o.Type.Equals(op.Type) {
-				return errorIncorrectValueInRegister(instr, o, op)
-			}
+	err := checkRegOperand(s, instr, instr.A)
+	if err != nil {
+		return err
+	}
+	err = checkRegOperand(s, instr, instr.B)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func checkRegOperand(s *state, instr *ir.Instr, op *ir.Operand) *Diagnostic {
+	if op == nil {
+		return nil
+	}
+	if op.Class == c.Register {
+		loaded := s.Registers.Load(op.Num)
+		if loaded == nil {
+			return errorUsingRegisterGarbage(instr, op)
+		}
+		if loaded.Num != op.Num || loaded.Class != op.Class || loaded.Type != op.Type {
+			return errorIncorrectValueInRegister(instr, loaded, op)
 		}
 	}
 	return nil
 }
 
-func checkEqual(instr *ir.Instr, types ...*T.Type) *Diagnostic {
+func checkEqual(instr *ir.Instr, types ...T.Type) *Diagnostic {
 	if len(types) == 0 {
 		return nil
 	}
 	first := types[0]
 	for _, t := range types[1:] {
-		if !first.Equals(t) {
+		if first != t {
 			return malformedEqualTypes(instr)
 		}
 	}
@@ -652,111 +635,88 @@ func checkEqual(instr *ir.Instr, types ...*T.Type) *Diagnostic {
 }
 
 func checkBinary(instr *ir.Instr, checkA, checkB, checkC Checker) *Diagnostic {
-	a := instr.Operands[0]
-	b := instr.Operands[1]
-	dest := instr.Destination[0]
-
-	if checkA.Check(a) &&
-		checkB.Check(b) &&
-		checkC.Check(dest) {
+	if checkA.Check(instr.A) &&
+		checkB.Check(instr.B) &&
+		checkC.Check(instr.Dest) {
 		return nil
 	}
 	return malformedTypeOrClass(instr)
 }
 
 func checkUnary(instr *ir.Instr, checkA, checkC Checker) *Diagnostic {
-	a := instr.Operands[0]
-	dest := instr.Destination[0]
-
-	if checkA.Check(a) &&
-		checkC.Check(dest) {
+	if checkA.Check(instr.A) &&
+		checkC.Check(instr.Dest) {
 		return nil
 	}
 	return malformedTypeOrClass(instr)
 }
 
 func checkInvalidClass(instr *ir.Instr) *Diagnostic {
-	for _, op := range instr.Operands {
-		if op.Mirc == c.InvalidMIRClass {
-			return invalidClass(instr)
-		}
+	if instr.A != nil && instr.A.Class == c.InvalidMIRClass {
+		return invalidClass(instr)
 	}
-	for _, dest := range instr.Destination {
-		if dest.Mirc == c.InvalidMIRClass {
-			return invalidClass(instr)
-		}
+	if instr.B != nil && instr.B.Class == c.InvalidMIRClass {
+		return invalidClass(instr)
+	}
+	if instr.Dest != nil && instr.Dest.Class == c.InvalidMIRClass {
+		return invalidClass(instr)
 	}
 	return nil
 }
 
-func checkForm(instr *ir.Instr, numOperands int, numDest int) *Diagnostic {
-	if len(instr.Operands) != numOperands ||
-		len(instr.Destination) != numDest {
+func checkForm(instr *ir.Instr, hasA, hasB, hasDest bool) *Diagnostic {
+	if hasA && instr.A == nil {
 		return malformedInstr(instr)
 	}
-	for _, op := range instr.Operands {
-		if op == nil {
-			return malformedInstr(instr)
-		}
+	if hasB && instr.B == nil {
+		return malformedInstr(instr)
 	}
-	for _, op := range instr.Destination {
-		if op == nil {
-			return malformedInstr(instr)
-		}
+	if hasDest && instr.Dest == nil {
+		return malformedInstr(instr)
 	}
 	return nil
 }
 
 func malformedInstr(instr *ir.Instr) *Diagnostic {
-	return eu.NewInternalSemanticError("malformed instruction: " + instr.String())
+	return NewInternalError("malformed instruction: " + instr.String())
 }
 func malformedEqualTypes(instr *ir.Instr) *Diagnostic {
-	return eu.NewInternalSemanticError("unequal types: " + instr.String())
+	return NewInternalError("unequal types: " + instr.String())
 }
 func malformedTypeOrClass(instr *ir.Instr) *Diagnostic {
-	return eu.NewInternalSemanticError("malformed type or class: " + instr.String())
+	return NewInternalError("malformed type or class: " + instr.String())
 }
 func invalidClass(instr *ir.Instr) *Diagnostic {
-	return eu.NewInternalSemanticError("invalid class: " + instr.String())
+	return NewInternalError("invalid class: " + instr.String())
 }
 func errorLoadingGarbage(instr *ir.Instr) *Diagnostic {
-	return eu.NewInternalSemanticError("loading garbage: " + instr.String())
+	return NewInternalError("loading garbage: " + instr.String())
 }
 func errorCallLoadingGarbage(instr *ir.Instr) *Diagnostic {
-	return eu.NewInternalSemanticError("call loading garbage: " + instr.String())
+	return NewInternalError("call loading garbage: " + instr.String())
 }
 func errorUsingRegisterGarbage(instr *ir.Instr, op *ir.Operand) *Diagnostic {
-	return eu.NewInternalSemanticError("using register garbage: " + op.String() + " of " + instr.String())
+	return NewInternalError("using register garbage: " + op.String() + " of " + instr.String())
 }
 func errorIncorrectValueInRegister(instr *ir.Instr, o, op *ir.Operand) *Diagnostic {
-	return eu.NewInternalSemanticError("incorrect value in register (" + o.String() + "): " + op.String() + " of " + instr.String())
+	return NewInternalError("incorrect value in register (" + o.String() + "): " + op.String() + " of " + instr.String())
 }
 func errorLoadingIncorrectType(instr *ir.Instr) *Diagnostic {
-	return eu.NewInternalSemanticError("load of incorrect type: " + instr.String())
+	return NewInternalError("load of incorrect type: " + instr.String())
 }
-func procNotFound(instr *ir.Instr) *Diagnostic {
-	return eu.NewInternalSemanticError("procedure not found: " + instr.String())
+func notAProc(instr *ir.Instr) *Diagnostic {
+	return NewInternalError("not a procedure: " + instr.String())
 }
-func procArgNotFound(instr *ir.Instr, d *ir.Symbol) *Diagnostic {
-	return eu.NewInternalSemanticError("argument " + d.Name + " not found in: " + instr.String())
+func procArgNotFound(instr *ir.Instr, proc *ir.Proc) *Diagnostic {
+	return NewInternalError("argument " + proc.Label + " not found in: " + instr.String())
 }
-func procInvalidNumOfArgs(instr *ir.Instr, p *ir.Proc) *Diagnostic {
-	n := strconv.Itoa(len(p.Args))
-	beepBop := strconv.Itoa(len(instr.Operands) - 1)
-	return eu.NewInternalSemanticError("expected " + n + " arguments, instead found: " + beepBop)
-}
-func procInvalidNumOfRets(instr *ir.Instr, p *ir.Proc) *Diagnostic {
-	n := strconv.Itoa(len(p.Rets))
-	beepBop := strconv.Itoa(len(instr.Destination))
-	return eu.NewInternalSemanticError("expected " + n + " returns, instead found: " + beepBop)
-}
-func procBadArg(instr *ir.Instr, d *T.Type, op *ir.Operand) *Diagnostic {
-	return eu.NewInternalSemanticError("argument " + op.String() + " doesn't match formal parameter (" + d.String() + ") in: " + instr.String())
+func procBadArg(instr *ir.Instr, d T.Type, op *ir.Operand) *Diagnostic {
+	return NewInternalError("argument " + op.String() + " doesn't match formal parameter (" + d.String() + ") in: " + instr.String())
 }
 func procBadRet(instr *ir.Instr, d T.Type, op *ir.Operand) *Diagnostic {
-	return eu.NewInternalSemanticError("return " + op.String() + " doesn't match formal return " + d.String() + " in: " + instr.String())
+	return NewInternalError("return " + op.String() + " doesn't match formal return " + d.String() + " in: " + instr.String())
 }
 
 func nilInstr(s *state) *Diagnostic {
-	return eu.NewInternalSemanticError("nil instruction in: " + s.proc.Name + " " + s.bb.Label)
+	return NewInternalError("nil instruction in: " + s.proc.Label + " " + s.bb.Label)
 }

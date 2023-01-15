@@ -5,17 +5,56 @@ Hacky compiler just to get it done, i'm tired of using other languages.
 # Compiler Pipeline
 
 ```
-Lexer   - trivial
-Parsing - trivial
-Name Resolution
+     | file
+     v                                      
+  --------------  module   -----------------
+  | resolution | --------> | cyclechecking |
+  --------------           -----------------
+file |      ^                      module | 
+     v      | AST                         v 
+ ------------------         ----------------
+ | lexer | parser |         | typechecking |
+ ------------------         ----------------
+                             typed module | 
+                                          V 
+ -------------------  hir  -----------------
+ | unique checking | <---- | linearization |
+ -------------------       -----------------
+  | hir + lifetime                          
+  V                                         
+ --------------  lowered hir  --------------
+ | lowering A | ------------> | lowering B |
+ --------------               --------------
+                                      lir | 
+                                          V 
+ ------------        mdir       ------------
+ | fasm gen | <---------------- | resalloc |
+ ------------                   ------------
+  | fasm code                               
+  v                                         
+  --------  elf                             
+  | fasm | ----->                           
+  --------                                  
+```
+
+```
+Lexer
+  Is called on-demand by the parser
+  returns only one error
+Parsing
+  returns only one error
+Resolution
   Recursively calls the Parser for each module
-  Creates Scopes and resolves names
-Typechecker
   Checks modules for circularity
+  Creates Scopes and resolves names
+  returns multiple errors (one per module)
+Cyclechecking
+  Checks types and constants for circularity
+Typechecker
   Recursively calls itself for each module
   Infers and typechecks symbols in topological order
   Internalizes the types so identity can be checked by id/pointer comparison
-AST -> HIR Transformation
+Linearization: AST -> HIR Transformation
   Value flow
   Full types
   Strings are internalized
@@ -24,20 +63,26 @@ AST -> HIR Transformation
   High level operations (array append, New, slice, etc)
   Only simple numerical literals
   All complex literals are destructured (array and product literals)
-    have a instruction that creates a tuple: make 1, 2, 3 -> t
+    _new + insertion One by one
   CFG with only conditional and direct branching ('return' is a instruction)
   Product access is inlined in a single operand (easier to lower)
-Borrow Checking
-  Uses HIR to validate affinity of references
-  Analises lifetimes and inserts frees where it sees fit (may be another pass)
+Unique Checking
+  Uses HIR to validate uniqueness of references
+  Analises lifetimes and annotates HIR
   Raises warnings for unused variables
-HIR -> LIR Transformation
-  Flat types
-  Operations only on basic types
+Lowering A
+  Converts maps and related operations to simpler data types
+  Inserts allocs and frees
+  Only basic operations
     High level operations like copy, append, free, new* are destructured into simple procedure calls
     Type-related operations like comparison, hashing etc are destructured too
+      (when SIMD is introduced, some of these operations might be linked later)
+Lowering B: HIR -> LIR Transformation
+  Planar types
+  Converts arrays to Ptr -> [size, cap, items...]
   Index based access into objects
-LIR -> MDIR Transformation (reuse Millipascal's backend)
+  Operations only on basic, Ptr and Proc types
+Resalloc: LIR -> MDIR Transformation (reuse Millipascal's backend)
   Blobby objects
   Address based access into objects
   Explicit stack frame management
@@ -45,12 +90,12 @@ LIR -> MDIR Transformation (reuse Millipascal's backend)
     Only i8, i16, i32, i64, ptr, bool and proc in the stack frame
     Callee Interprocedural, Caller Interprocedural, Spill and Local regions
   Explicit Register management
-MDIR -> FASM
+fasm generation: MDIR -> FASM
 ```
 
 I have no fucking idea how 'mmap' works, so i will just use a 8~32Mb static memory region,
 i'll care about this later, it will be a fun challenge to write the YMCA compiler with a
-32mb heap.
+~32mb heap.
 
 ### HIR:
 
@@ -135,7 +180,7 @@ a instruction so lowering is easier.
  - Bubble-up `^` is desugared into a proper branch with return, with
 unsafe cast underneath.
  - `switch` is desugared into a chain of `if`s and unsafe casts
- - `for` and `for range` are desugared into proper branches 
+ - `for` and `for range` are desugared into proper branches
  - `for each` is desugared with unsafe interior pointers
  - `-=`, `+=`, `*=` already exist in three address code
  - product, array and map literals are destructured in a unsafe allocation

@@ -103,3 +103,11 @@ func (this *Diagnostic) String() string {
 		this.Severity.String() +
 		": " + this.Message
 }
+
+func NewInternalError(message string) *Diagnostic {
+	return &Diagnostic{
+		Message:  message,
+		Severity: InternalError,
+		Code:     dc.InternalCompilerError,
+	}
+}
