@@ -1529,10 +1529,13 @@ They can be desugared:
 
 The `..=` operator appends an array to the end of the other.
 The arrays must be of *identical* types, the output is also *identical*.
+`set a ..= \{1, 2, 3}` is equivalent to `set a = a .. \{1, 2, 3}`, but
+`a` is updated in-place, that is: if `a` has enough capacity to hold
+all items of the array in the right side, it will not allocate a new
+array.
 
- - `set a ..= \{1, 2, 3}` is equivalent to `set a = a .. \{1, 2, 3}`
-
-Since `..` makes a copy, `..=` is also subject to moving semantics,
+Since `..` copies items from one array to the other,
+`..=` is also subject to moving semantics,
 specially `set a ..= a` will not work if the type of `a` contains
 references.
 
@@ -1542,6 +1545,7 @@ with the key `"key"` from the map `a` and returns it's value. Looking up
 a key in a map and removing that key should return the same item, if present,
 otherwise it should return `nil`. Given a map of type `*i8 -> int`, the
 output type of a remove expression on this map should be `?int`.
+Removing an item from a map will decrease the value of `length` but not of `cap`.
 
 ```
 proc main do
