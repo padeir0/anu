@@ -1,10 +1,22 @@
 # anu programming language
 
-Anu is a work-in-progress programming language.
+Anu is a work-in-progress.
+
+It is a procedural, statically typed programming language.
+The most important characteristics are it's compile-time
+memory management through use of unique pointers,
+the lack of statements and the focus on algebraic data types.
 
 ```
 proc main do print["Hello, World!\n"];
 ```
+
+A few guiding principles of the design:
+
+ - Compile-time complexity is better than runtime complexity
+ - Compile-time guarantees are more important than language flexibility
+ - Limited purpose: beeing simple is more important than being general
+ - Correctness, Performance, Conciseness. In that order.
 
 # Table of Contents
 
@@ -75,15 +87,12 @@ proc main do print["Hello, World!\n"];
     10. [Scopes](#scopes)
 5. [Misc](#misc)
     1. [Full Grammar](#fullgrammar)
-    2. [Future](#future)
+    2. [Builtin Modules](#builtinmodules)
+    3. [Future](#future)
 6. [Examples](#examples)
 
 # Introduction <a name="introduction"/>
 
-Anu is a procedural, statically typed programming language.
-The most important characteristics are it's compile-time
-memory management through use of unique pointers,
-the lack of statements and the focus on algebraic data types.
 
 # Lexical Elements <a name="lexical"/>
 
@@ -2342,20 +2351,30 @@ whitespace = " " | "\t"
 }
 ```
 
+## Builtin Modules <a name="builtinmodules"/>
+
+Every anu program, regardless of the folder it's present, has 
+access to a few builtin modules that are part of the standard
+library. These modules are special in the sense that they can be
+shadowed by other modules in the current folder.
+
+### os
+
+The `os` module has basic syscalls for dealing with I/O. These include:
+`open`, `close`, `write` and `read` procedures, as well as `stdin`, `stdout`
+and `stderr` constants for file descriptors and the `fd` type.
+
 ## Future <a name="future"/>
 
+ - Bitwise operators
+ - `with` expression for non-destructive mutation of products
+ - Some form of reflection that returns stack trace information
  - Make maps comparable and hashable
+
+Maybe never:
+ - Rank 1 polymorphism with constraints and inference
  - `target` construct for build tags aroung symbols
  - `asm` procedures and a clear, well defined ABI
- - `with` expression for non-destructive mutation of products
- - make strings and chars UTF8?
- - FFI?
- - Floats?
- - Bitwise operators
- - dependency management
- - Rank 1 polymorphism and inference (inferred constraints too)
- - Some form of reflection that returns stack trace information
- - Syntax sugar for chaining (without creating closures): `a \> f[] \> g[]`
 
 # Examples <a name="examples"/>
 
