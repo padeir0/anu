@@ -115,7 +115,7 @@ id := letter {letter | digit}.
 ## Keywords <a name="keywords"/>
 
 Some identifiers are reserved and have special meaning,
-the following 36 identifiers are considered keywords and
+the following 38 identifiers are considered keywords and
 cannot be used as symbol names.
 
 ```
@@ -124,7 +124,8 @@ begin   end      is      or    and     not
 do      for      if      each  in      switch 
 case    default  elseif  else  return  let    
 set     as       to      then  range   nil    
-new     remove   true    false void   
+new     remove   true    false void    all    
+enum
 ```
 
 ## Int <a name="int"/>
@@ -239,8 +240,8 @@ else 1
 Where this rule is not convenient (or safe), it's best to
 desambiguate with parenthesis `(`/`)` or blocks `begin`/`end`.
 
-Productions known to be dangling are: `let ... in ...`, `if ... then` and
-`switch ... case`. Productions that are not LL(1) are all lists with
+Productions known to be dangling are: `let ... in ...`, `if ... then`,
+`switch ... case` and `set ... = ...`. Productions that are not LL(1) are all lists with
 optional trailing commas and fields with optional names.
 
 ## Module <a name="module"/>
@@ -571,7 +572,7 @@ type Json   is nil | int | *i8 | *i8->Json | *Json
 
 ```
 ProductType = "{" Naming ("," Naming)* ","? "}"
-Naming = ("." id)? UnaryType
+Naming = ("." id)? TypeExpr
 ```
 
 Products are made by joining types inside brackets `{}`,
@@ -854,7 +855,7 @@ Suffix
 #### Call/Index <a name="call"/>
 
 ```
-CallOrIndex = "[" FieldList "]"
+CallOrIndex = "[" FieldList? "]"
 ```
 
 If the factor is a procedure, array or map,
@@ -1013,7 +1014,7 @@ then it's an invalid type annotation.
 ```
 Factor
 = Name
-| int | bool | rune | string | nil
+| int | bool | char | string | nil
 | ArrayMapLit
 | ProductLit
 | For
@@ -1368,7 +1369,7 @@ proc factorial[n:int] int do
 
 ### EarlyReturn <a name="earlyreturn"/>
 ```
-EarlyReturn = "return" Expr
+EarlyReturn = "return" Expr?
 ```
 
 A return expression performs a (possibly early) return
@@ -2241,7 +2242,7 @@ ArrayType = "*"
 Optional = "?"
 Ref = "&"
 ProductType = "{" Naming ("," Naming)* ","? "}"
-Naming = ("." id)? UnaryType
+Naming = ("." id)? TypeExpr
 NestedType = "(" TypeExpr ")"
 ProcType = "proc" TypeArguments TypeExpr
 TypeArguments = "[" TypeExprList? "]"
@@ -2270,11 +2271,11 @@ Suffix
 
 PropertyAccess = "." id
 TypeReturn = "^" TypeExpr
-CallOrIndex = "[" FieldList "]"
+CallOrIndex = "[" FieldList? "]"
 
 Factor
 = Name
-| int | bool | rune | string | nil
+| int | bool | char | string | nil
 | ArrayMapLit
 | ProductLit
 | For
@@ -2294,7 +2295,7 @@ ExprSemicolon = Expr ";"?
 
 ArrayMapLit = "\" ComplexLitBody
 ProductLit = ComplexLitBody
-ComplexLitBody = "{" (":" TypeExpr)? FieldList? "}"
+ComplexLitBody = "{" TypeAnnot? FieldList? "}"
 
 FieldList = Field ("," Field)* ","?
 Field = Expr ("=" Expr)?
@@ -2315,15 +2316,14 @@ If = "if" Expr "then" Expr ElseIf* Else?
 ElseIf = "elseif" Expr "then" Expr
 Else = "else" Expr
 
-EarlyReturn = "return" Expr
+EarlyReturn = "return" Expr?
 
 Let = "let" LetDeclList ("in" Expr)?
 Set = "set" ExprList assignOp Expr
 LetDeclList = LetDecl ("," LetDecl)* ","?
 LetDecl = VarList "=" Expr
 
-VarList = Annotated ("," Annotated)* ","?
-Annotated = id TypeAnnot?
+VarList = Decl ("," Decl)* ","?
 
 New = "new" TypeAnnot "[" FieldList? "]"
 
@@ -2340,8 +2340,8 @@ id = ~(keyword ~letter) letter alnum*
 nil = "nil"
 int = digit+
 bool = "true" | "false"
-rune = "\'" insideRune* "\'"
-insideRune = (~"\'" any | "\\\'")
+char = "\'" insideChar* "\'"
+insideChar = (~"\'" any | "\\\'")
 string = "\"" insideStr* "\""
 insideStr = (~"\"" any | "\\\"")
 comment = "#" (~lineTerminator any)*
