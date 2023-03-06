@@ -26,6 +26,9 @@ func (this *Type) String() string {
 
 type TypeKind int
 
+// note that we don't need to take field names into consideration,
+// this is not useful for the user since if it wants two different
+// types to be different, he will declare a new type `type MyNewType is {whatever}`
 const (
 	InvalidTypeKind TypeKind = iota
 

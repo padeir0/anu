@@ -582,11 +582,11 @@ func elseif(l *lxr.Lexer) (*mod.Node, *Error) {
 	if err != nil {
 		return nil, err
 	}
-	firstRes, err := expectProd(l, expr, "expression")
+	resExpr, err := expectProd(l, expr, "expression")
 	if err != nil {
 		return nil, err
 	}
-	kw.Leaves = []*mod.Node{cond, firstRes}
+	kw.Leaves = []*mod.Node{cond, resExpr}
 	return kw, nil
 }
 

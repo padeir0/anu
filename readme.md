@@ -115,7 +115,7 @@ id := letter {letter | digit}.
 ## Keywords <a name="keywords"/>
 
 Some identifiers are reserved and have special meaning,
-the following 38 identifiers are considered keywords and
+the following 37 identifiers are considered keywords and
 cannot be used as symbol names.
 
 ```
@@ -874,8 +874,10 @@ parameters defined in the procedure declaration, if named parameters
 are not used, the order is important, and each parameter must match
 the parameters in the declaration in order. If named parameters are used,
 each parameter must be of *assignable* type to the respectively named
-formal parameter in the procedure declaration. You can't mix and match
-ordered and named parameters.
+formal parameter in the procedure declaration.
+
+Its possible to mix named and unnamed parameters, but if done so, the
+parameters must still be in order, and the name serves only as documentation.
 
 ```
 proc Add[a:int, b:int] int do a + b;
@@ -889,6 +891,12 @@ proc main do
     # named parameters
     let c = Square[a = 2]
     let d = Add[a = c, b = c]
+
+    # mixed parameters
+    let e = Add[c, b = c]
+
+    # this is an error:
+    let f = Add[b = c, c]
   end
 ```
 
@@ -943,7 +951,7 @@ or reference to a product, map or array (automatic dereferencing),
 
 For products, the field must exist inside it, if the product has named
 fields, the names must match those given by the user, however, if
-fields are unamed, they default to one or more letters in alphabetical order 
+fields are unnamed, they default to one or more letters in alphabetical order 
 (`product.a`, `product.b`,... , `product.z`, `product.aa`, ...).
 
 ```
@@ -1072,13 +1080,16 @@ Field = Expr ("=" Expr)?
 ```
 
 A product literal alocates a product type and sets it's values.
-The literal can be inferred or explicitly typed, named or unamed.
-It's an error to mix and match named and unamed fields.
+The literal can be inferred or explicitly typed, named or unnamed.
+It's an error to mix and match named and unnamed fields.
 
 When explicitly typed, each field must have type *identical*
-to the field specified in the type, if the fields are unamed,
+to the field specified in the type, if the fields are unnamed,
 the fields must be present in order, if names are used,
 the type must match the respectively named field in the type.
+
+Its possible to mix named and unnamed fields, but if done so, the
+fields must still be in order, and the name serves only as documentation.
 
 Example of valid explicitly typed product literals:
 

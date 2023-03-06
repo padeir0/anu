@@ -131,7 +131,8 @@ func (this *Error) ErrCode() string {
 
 func ProcessFileError(e error) *Error {
 	return &Error{
-		Code:    et.FileError,
-		Message: e.Error(),
+		Code:     et.FileError,
+		Severity: sv.Error,
+		Message:  e.Error(),
 	}
 }
