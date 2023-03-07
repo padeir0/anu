@@ -1,0 +1,2 @@
+type A as &B
+type B as &A

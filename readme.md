@@ -1776,7 +1776,7 @@ proc P[a:int, b:int] int do
   end
 ```
 
-## Moving semantics <a name="movingsemantics"/>
+## Moving Semantics <a name="movingsemantics"/>
 
 Moving semantics guarantee that all references in Anu are the sole owner
 of the objects they point to.
@@ -1851,7 +1851,6 @@ proc F[&int] do nil;
 References are also moved when creating array, map or
 product literals and passing parameters to procedures.
 
-
 ```
 proc main do
   begin
@@ -1896,7 +1895,7 @@ proc main do
     let z = \{:*?&int &a, &b}
 
     let c : ?&int = nil
-    swap z[0] <-> c;
+    set z[0] <-> c;
     # now 'c' contains the reference you want to work with
     # and 'z[0]' contains 'nil'
     
@@ -1912,7 +1911,7 @@ The `..` and `..=` operators are also subject to moving semantics
 since they create a copy of the array:
 
 ```
-proc main do
+proc A do
   begin
     let a = 0, aa = 1, aaa = 2
     #                 v   v    v they are moved
@@ -1921,10 +1920,18 @@ proc main do
     #       v the contents of 'b' are moved
     set b = b .. b;
     #            ^ error: use of container with moved references
+  end
 
+proc B do
+  begin
+    let a = 0, aa = 1, aaa = 2
+    #                 v   v    v they are moved
+    let b :*&int = \{&a, &aa, &aaa}
+
+    #         v moves the contents of 'b'
     set b ..= b;
     #   ^ error: use of container with moved references
-  end
+  end 
 ```
 
 In a `switch` expresion, aliasing moves the variable or the contents
@@ -2003,7 +2010,7 @@ Objects are freed as soon as possible. An object may be freed when:
 
  - You change the value of a reference
  - You change the value of an object that contains references
- - A reference value is no longer used in or returned from a scope that has it's ownership
+ - A reference value is not returned and no longer used in a scope that has it's ownership
  - A reference value is discarded
 
 Examples: 
@@ -2031,8 +2038,9 @@ proc F do
   end
 ```
 
-Slicing is subject to moving semantics, when slicing an array that contains
-references, the remaining objects not contained in the slice are freed,
+Slicing is subject to freeing and moving semantics,
+when slicing an array that contains references,
+the remaining objects not contained in the slice are freed,
 since they are no longer used in the scope (they are not reachable).
 
 ```
@@ -2041,7 +2049,7 @@ proc main do
     let myInt = 0, mySecondInt = 1
     let a = \{&myInt, &mySecondInt}
 
-    a[0, 1] # this frees 'mySecondInt' internally
+    let b = a[0, 1] # this frees 'mySecondInt' internally
     # 'a' is invalid here
   end
 ```
@@ -2147,36 +2155,51 @@ All Header imports create names in the global space of each module.
 While exports can only refer to non-imported names living in the global
 space.
 
+In all following examples, the number of the scope indicates the depth
+of the scope, in all cases, scope with depth `1` is a child scope
+of the scope with depth `0`, and so on.
+
 Here `F` is declared in the global scope of the module, while `a` and `b`
-are declared in a separate argument scope. Finally the `do ...` lives
-in its own scope too.
+are declared in a separate argument scope, The `do ...` expression
+lives in the same scope as the arguments.
 
 ```
 --0--v
 proc F[a:int, b:int] do ...
-      ^-----1------^    ^--2---
+      ^-----1--------------
+```
+
+A block can create a scope without declaring any variable:
+
+```
+--0--v
+proc F[a:int, b:int] do begin  ...  end
+      ^-----1---------^ ^-----2-------^
 ```
 
 The two following `for` expressions may create scopes that are nested
-as described, note that the `do ...` can always shadow the previously
-declared variables.
+as described, note that the `do ...` can't shadow the loop variables
+unless a new scope is added (`begin`/`end`).
 
 ```
-                       v--0--v
-for each index, item in array do ...
-         ^----1----^             ^--2---
+-0---v                                       v--1--v
+proc A[array:*int] do for each index, item in array do ...;
+      ^-----1----------------  ^----2----^             ^--2---
 
-for range 0 to 10 as  i  do ...
-         ^---0---^  ^-1-^   ^--2--
+-0---v
+proc A[array:*int] do for range 0 to 10 as  i  do ...;
+      ^----1--------------------------^   ^-2--------
+
+-0---v
+proc A[array:*int] do for range 0 to 10 as  i  do begin ... end
+      ^----1--------------------------^   ^-2---^ ^-----3-----^
 ```
 
 The `switch type` behaves similarly, where the `as` keyword
-creates a new scope with a single variable that can be shadowed inside
-the `case`s.
-
+creates a new scope with a single variable.
 ```
----------0--v    v-1-v  v---2---
-switch type a as   x    case ... then ...
+-0---v v-------1-------------------v v-2-----------------
+proc F [a:SomeSum] do switch type a as x case ... then ...
 ```
 
 The `let` construct has a more complicated scope rule, in the following
@@ -2184,26 +2207,19 @@ example, all variables declared inside the `let ... in` live in the
 same scope, and are evaluated in order, as they appear in text.
 
 ```
-let a = 0  in ...
-   ^--0--^    ^--1---
+const global0 = let a = 0  in ...
+---------0--^       ^--1---------
 
-let a = 0, b = 1, c = 2 in ...
-   ^---------0---------^   ^--1---
+const global1 = let a = 0, b = 1, c = 2 in ...
+-------0----^       ^---------1----------------
 ```
 
 While if the `let` has no `in`, the variables are declared in the
 surrouding scope:
 
 ```
-let a = 0, b = 1
---0------------^
-```
-
-Finally, a block can create a scope without declaring any variable:
-
-```
-begin  ...  end
-     ^--0--^
+proc main do begin let a = 0, b = 1 end
+--0-----^    ^-----------1------------^
 ```
 
 # Misc <a name="misc"/>

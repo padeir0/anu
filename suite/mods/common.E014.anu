@@ -1,0 +1,2 @@
+export VeryCommon
+proc VeryCommon[] do exit[2]

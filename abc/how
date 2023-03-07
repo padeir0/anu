@@ -63,9 +63,8 @@ Resolution
   Recursively calls the Parser for each module
   Checks modules for circularity
   Creates Scopes and resolves names
-  returns multiple errors (one per module)
-Typechecker
   Checks types and constants for circularity
+Typechecker
   Recursively calls itself for each module
   Infers and typechecks symbols in topological order
   Internalizes the types so identity can be checked by id/pointer comparison
@@ -93,7 +92,7 @@ Lowering
     Type-related operations like comparison, hashing etc are destructured too
       (when SIMD is introduced, some of these operations might be linked later)
   Operations only on basic and Proc types
-Resalloc: LIR -> MDIR Transformation (reuse Millipascal's backend)
+Resalloc: LIR -> MDIR Transformation (reuse Millipascal's backend?)
   Address based access into objects
   Explicit stack frame management
     Slot based indexing into the stack frame
@@ -103,9 +102,7 @@ Resalloc: LIR -> MDIR Transformation (reuse Millipascal's backend)
 fasm generation: MDIR -> FASM
 ```
 
-I have no fucking idea how 'mmap' works, so i will just use a 8~32Mb static memory region,
-i'll care about this later, it will be a fun challenge to write the YMCA compiler with a
-~32mb heap.
+I have no fucking idea how 'mmap' works, so i will just use a 8~32Mb static memory region, i'll care about this later
 
 ### HIR:
 

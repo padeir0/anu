@@ -1,0 +1,3 @@
+from constants import phi
+
+proc main do phi+phi

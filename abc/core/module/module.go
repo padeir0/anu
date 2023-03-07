@@ -75,14 +75,15 @@ func indent(n int) string {
 var Universe *Scope = &Scope{
 	Parent: nil,
 	Symbols: map[string]*Symbol{
-		"i8":   {Name: "i8", Kind: sk.Builtin},
-		"i16":  {Name: "i16", Kind: sk.Builtin},
-		"i32":  {Name: "i32", Kind: sk.Builtin},
-		"i64":  {Name: "i64", Kind: sk.Builtin},
-		"int":  {Name: "int", Kind: sk.Builtin},
-		"bool": {Name: "bool", Kind: sk.Builtin},
-		"nil":  {Name: "nil", Kind: sk.Builtin},
-		"void": {Name: "void", Kind: sk.Builtin},
+		"i8":   {Name: "i8", Kind: sk.TypeCreation},
+		"i16":  {Name: "i16", Kind: sk.TypeCreation},
+		"i32":  {Name: "i32", Kind: sk.TypeCreation},
+		"i64":  {Name: "i64", Kind: sk.TypeCreation},
+		"int":  {Name: "int", Kind: sk.TypeCreation},
+		"bool": {Name: "bool", Kind: sk.TypeCreation},
+		"nil":  {Name: "nil", Kind: sk.TypeCreation},
+		"void": {Name: "void", Kind: sk.TypeCreation},
+		"exit": {Name: "exit", Kind: sk.Procedure},
 	},
 }
 
@@ -115,6 +116,26 @@ type Module struct {
 	Exported     map[string]*Symbol
 
 	Visited bool
+}
+
+func (this *Module) String() string {
+	deps := []string{}
+	for _, dep := range this.Dependencies {
+		deps = append(deps, dep.M.Name)
+	}
+	exported := []string{}
+	for _, exp := range this.Exported {
+		exported = append(exported, exp.Name)
+	}
+	globals := []string{}
+	for name := range this.Global.Symbols {
+		globals = append(globals, name)
+	}
+	return fmt.Sprintf("%v, %v, %v\n", this.BasePath, this.Name, this.FullPath) +
+		"dependencies: " + strings.Join(deps, ", ") + "\n" +
+		"exported: " + strings.Join(exported, ", ") + "\n" +
+		"globals: " + strings.Join(globals, ", ") + "\n" +
+		this.Root.String()
 }
 
 func (this *Module) ResetVisited() {
@@ -198,8 +219,6 @@ func (this *Symbol) String() string {
 		return "new type " + this.Name
 	case sk.Module:
 		return "module " + this.Name
-	case sk.Builtin:
-		return "builtin " + this.Name
 	default:
 		return "invalid"
 	}

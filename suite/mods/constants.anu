@@ -1,0 +1,5 @@
+export pi, tau
+
+const pi = 3
+const tau = 6
+const e = 2

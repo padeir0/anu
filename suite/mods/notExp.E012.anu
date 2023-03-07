@@ -1,0 +1,3 @@
+from constants import e
+
+proc main do e + e

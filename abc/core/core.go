@@ -57,6 +57,9 @@ type Location struct {
 }
 
 func (this *Location) String() string {
+	if this == nil {
+		return ""
+	}
 	if this.Range != nil {
 		return this.File + ":" +
 			this.Range.String()

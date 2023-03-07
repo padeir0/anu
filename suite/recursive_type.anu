@@ -1,0 +1,11 @@
+type List is {
+	.Value int,
+	.Next &List|nil,
+}
+
+proc main do
+begin
+	let a = {:List Value = 0, Next = nil}
+	let b = {:List Value = 1, Next = a}
+	let c = {:List Value = 1, Next = b}
+end

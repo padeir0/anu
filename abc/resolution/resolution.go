@@ -109,6 +109,9 @@ func resolve(M *ir.Module) *Error {
 
 func resolveProcScopes(M *ir.Module) *Error {
 	for _, sy := range M.Global.Symbols {
+		if sy.External {
+			continue
+		}
 		switch sy.Kind {
 		case sk.Procedure:
 			err := resolveInnerProc(M, sy)
@@ -120,16 +123,42 @@ func resolveProcScopes(M *ir.Module) *Error {
 	return nil
 }
 
-// we will ignore product field accesses and named procedure arguments,
-// deferring it to typechecking,
-// as both are essentially auxiliary type information
-// that is bound to procedures and products
 func resolveInnerProc(M *ir.Module, sy *ir.Symbol) *Error {
-	return resolveExpr(M, sy, M.Global, sy.N, false)
+	argScope := &ir.Scope{
+		Parent:  M.Global,
+		Symbols: map[string]*ir.Symbol{},
+	}
+	sy.N.Scope = argScope
+	// declaring arguments
+	sig := sy.N.Leaves[2]
+	if sig != nil {
+		args := sig.Leaves[0]
+		for _, arg := range args.Leaves {
+			var name *ir.Node
+			if len(arg.Leaves) == 2 {
+				name = arg.Leaves[0]
+			} else {
+				name = arg
+			}
+			symbol := &ir.Symbol{
+				Kind:     sk.Argument,
+				Name:     name.Lexeme.Text,
+				N:        name,
+				M:        M,
+				External: false,
+			}
+			argScope.Add(name.Lexeme.Text, symbol)
+		}
+	}
+	expr := sy.N.Leaves[3]
+	return resolveExpr(M, sy, argScope, expr, false)
 }
 
 func resolveGlobalSymbolsReferences(M *ir.Module) *Error {
 	for _, sy := range M.Global.Symbols {
+		if sy.External {
+			continue
+		}
 		switch sy.Kind {
 		case sk.TypeAlias:
 			err := resolveTypeAlias(M, sy)
@@ -265,6 +294,11 @@ func resolveProc(M *ir.Module, sy *ir.Symbol) *Error {
 //     - 'isConst' tells whether we're in a constant expression or not
 //     so we can raise errors when we encounter non-constant expressions
 //     and otherwise ignore arbitrary recursion
+//
+// we will ignore product field accesses and named procedure arguments,
+// deferring it to typechecking,
+// as both are essentially auxiliary type information
+// that is bound to procedures and products
 func resolveExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node, isConst bool) *Error {
 	switch n.Kind {
 	case nk.Terminal:
@@ -390,17 +424,29 @@ func resolveIdentExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node, 
 	return nil
 }
 
+// const global0 = let a = 0  in ...
+// ---------0--^       ^--1---------
+//
+// const global1 = let a = 0, b = 1, c = 2 in ...
+// -------0----^       ^---------1----------------
+//
+// proc main do begin let a = 0, b = 1 end
+// --0-----^    ^-----------1------------^
 func resolveLetExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node, isConst bool) *Error {
 	decls := n.Leaves[0]
-	newScope := &ir.Scope{
-		Parent:  scope,
-		Symbols: map[string]*ir.Symbol{},
+	expr := n.Leaves[1]
+	if expr != nil {
+		newScope := &ir.Scope{
+			Parent:  scope,
+			Symbols: map[string]*ir.Symbol{},
+		}
+		n.Scope = scope
+		scope = newScope
 	}
-	decls.Scope = newScope
 	for _, subDecls := range decls.Leaves {
 		decls := subDecls.Leaves[0]
 		exp := subDecls.Leaves[1]
-		err := resolveExpr(M, sy, newScope, exp, isConst)
+		err := resolveExpr(M, sy, scope, exp, isConst)
 		if err != nil {
 			return err
 		}
@@ -409,26 +455,27 @@ func resolveLetExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node, is
 			if len(decl.Leaves) == 2 {
 				name = decl.Leaves[0]
 				texp := decl.Leaves[1]
-				err := resolveTypeExpr(M, sy, newScope, false, false, texp)
+				err := resolveTypeExpr(M, sy, scope, false, false, texp)
 				if err != nil {
 					return err
 				}
 			} else {
-				name = decl.Leaves[0]
+				name = decl
 			}
 			newSymbol := &ir.Symbol{
 				Kind:     sk.Local,
 				Name:     name.Lexeme.Text,
 				N:        name,
 				M:        M,
-				Refs:     map[string]*ir.Reference{},
 				External: false,
 			}
-			newScope.Add(name.Lexeme.Text, newSymbol)
+			scope.Add(name.Lexeme.Text, newSymbol)
 		}
 	}
-	expr := n.Leaves[1]
-	return resolveExpr(M, sy, newScope, expr, isConst)
+	if expr != nil {
+		return resolveExpr(M, sy, scope, expr, isConst)
+	}
+	return nil
 }
 
 func resolveSetExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
@@ -493,7 +540,16 @@ func resolveCondForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node
 	return resolveExpr(M, sy, scope, resExpr, false)
 }
 
+// -0---v                                       v--1--v
+// proc A[array:*int] do for each index, item in array do ...;
+//       ^-----1----------------  ^----2----^             ^--2---
 func resolveIterForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
+	collection := n.Leaves[2]
+	err := resolveExpr(M, sy, scope, collection, false)
+	if err != nil {
+		return err
+	}
+
 	newScope := &ir.Scope{
 		Parent:  scope,
 		Symbols: map[string]*ir.Symbol{},
@@ -524,15 +580,14 @@ func resolveIterForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node
 			newScope.Add(id.Lexeme.Text, idSymbol)
 		}
 	}
-	collection := n.Leaves[2]
-	err := resolveExpr(M, sy, newScope, collection, false)
-	if err != nil {
-		return err
-	}
+	n.Scope = newScope
 	resExpr := n.Leaves[3]
 	return resolveExpr(M, sy, newScope, resExpr, false)
 }
 
+// -0---v
+// proc A[array:*int] do for range 0 to 10 as  i  do ...;
+//       ^----1--------------------------^   ^-2--------
 func resolveRangedForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
 	initial := n.Leaves[0]
 	err := resolveExpr(M, sy, scope, initial, false)
@@ -546,12 +601,12 @@ func resolveRangedForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.No
 		return err
 	}
 
-	newScope := &ir.Scope{
-		Parent:  scope,
-		Symbols: map[string]*ir.Symbol{},
-	}
 	as := n.Leaves[2]
 	if as != nil {
+		newScope := &ir.Scope{
+			Parent:  scope,
+			Symbols: map[string]*ir.Symbol{},
+		}
 		sy := &ir.Symbol{
 			Kind:     sk.Local,
 			Name:     as.Lexeme.Text,
@@ -560,9 +615,12 @@ func resolveRangedForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.No
 			External: false,
 		}
 		newScope.Add(as.Lexeme.Text, sy)
+		scope = newScope
+		as.Scope = newScope
 	}
+	// only create new scope if `as` is present
 	resExpr := n.Leaves[3]
-	return resolveExpr(M, sy, newScope, resExpr, false)
+	return resolveExpr(M, sy, scope, resExpr, false)
 }
 
 func resolveIfExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
@@ -639,18 +697,20 @@ func resolveValueSwitchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.
 	return nil
 }
 
+// -0---v v-------1-------------------v v-2-----------------
+// proc F [a:SomeSum] do switch type a as x case ... then ...
 func resolveTypeSwitchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
 	cond := n.Leaves[0]
 	err := resolveExpr(M, sy, scope, cond, false)
 	if err != nil {
 		return err
 	}
-	newScope := &ir.Scope{
-		Parent:  scope,
-		Symbols: map[string]*ir.Symbol{},
-	}
 	as := n.Leaves[1]
 	if as != nil {
+		newScope := &ir.Scope{
+			Parent:  scope,
+			Symbols: map[string]*ir.Symbol{},
+		}
 		sy := &ir.Symbol{
 			Kind:     sk.Local,
 			Name:     as.Lexeme.Text,
@@ -659,24 +719,26 @@ func resolveTypeSwitchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.N
 			External: false,
 		}
 		newScope.Add(as.Lexeme.Text, sy)
+		scope = newScope
+		as.Scope = newScope
 	}
 	typeCaseList := n.Leaves[2]
 	for _, tcase := range typeCaseList.Leaves {
 		texps := tcase.Leaves[0]
-		err := resolveTypeExprs(M, sy, newScope, false, false, texps.Leaves...)
+		err := resolveTypeExprs(M, sy, scope, false, false, texps.Leaves...)
 		if err != nil {
 			return err
 		}
 
 		resExpr := tcase.Leaves[1]
-		err = resolveExpr(M, sy, newScope, resExpr, false)
+		err = resolveExpr(M, sy, scope, resExpr, false)
 		if err != nil {
 			return err
 		}
 	}
 	def := n.Leaves[3]
 	if def != nil {
-		return resolveExpr(M, sy, newScope, def.Leaves[0], false)
+		return resolveExpr(M, sy, scope, def.Leaves[0], false)
 	}
 	return nil
 }
@@ -762,15 +824,15 @@ func resolveCallOrIndexExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.
 	for _, leaf := range n.Leaves {
 		var expr *ir.Node
 		if leaf.Lexeme.Kind == lk.Assign {
-			field := n.Leaves[0]
+			field := leaf.Leaves[0]
 			// validation of field names is deferred to typechecking
 			if field.Lexeme.Kind != lk.Ident {
 				return errorInvalidField(M, field)
 			}
 			// consider only right side
-			expr = n.Leaves[1]
+			expr = leaf.Leaves[1]
 		} else {
-			expr = n
+			expr = leaf
 		}
 		// isConst is always false here, calls are not allowed
 		// in global code
@@ -982,8 +1044,9 @@ func getSymbol(M *ir.Module, n *ir.Node) *ir.Symbol {
 	return &ir.Symbol{
 		Kind: kind,
 		Name: name,
-		M:    M,
 		N:    n,
+		M:    M,
+		Refs: map[string]*ir.Reference{},
 	}
 }
 
@@ -1281,7 +1344,11 @@ func newModule(basePath, modID, filename string, root *ir.Node) *ir.Module {
 		Root:         root,
 		Dependencies: map[string]*ir.Dependency{},
 		Exported:     map[string]*ir.Symbol{},
-		Global:       &ir.Scope{Parent: ir.Universe},
+		Global: &ir.Scope{
+			Parent:  ir.Universe,
+			Symbols: map[string]*ir.Symbol{},
+		},
+		Visited: false,
 	}
 }
 
@@ -1322,6 +1389,9 @@ func depHasVisited(visited []*ir.Dependency, b *ir.Dependency) bool {
 
 func checkAllTypeCycles(M *ir.Module) *Error {
 	for _, sy := range M.Global.Symbols {
+		if sy.External {
+			continue
+		}
 		switch sy.Kind {
 		case sk.TypeAlias, sk.TypeCreation, sk.TypeEnum:
 			err := checkTypeCycle(M, sy, []*ir.Symbol{})
@@ -1335,9 +1405,12 @@ func checkAllTypeCycles(M *ir.Module) *Error {
 
 func checkValCycles(M *ir.Module) *Error {
 	for _, s := range M.Global.Symbols {
+		if s.External {
+			continue
+		}
 		if s.Kind == sk.Constant {
 			prev := []*ir.Symbol{}
-			err := checkValCycle(M, s, prev)
+			err := checkConstCycle(M, s, prev)
 			if err != nil {
 				return err
 			}
@@ -1346,15 +1419,16 @@ func checkValCycles(M *ir.Module) *Error {
 	return nil
 }
 
-func checkValCycle(M *ir.Module, s *ir.Symbol, prev []*ir.Symbol) *Error {
+func checkConstCycle(M *ir.Module, s *ir.Symbol, prev []*ir.Symbol) *Error {
 	if hasVisited(prev, s) {
+		prev = append(prev, s)
 		return errorInvalidConstCycle(M, prev, s)
 	}
 	prev = append(prev, s)
 	top := len(prev)
 	for _, ref := range s.Refs {
 		if ref.S.Kind == sk.Constant {
-			err := checkValCycle(M, ref.S, prev[0:top])
+			err := checkConstCycle(M, ref.S, prev[0:top])
 			if err != nil {
 				return err
 			}
@@ -1365,13 +1439,14 @@ func checkValCycle(M *ir.Module, s *ir.Symbol, prev []*ir.Symbol) *Error {
 
 func checkTypeCycle(M *ir.Module, sy *ir.Symbol, visited []*ir.Symbol) *Error {
 	if hasVisited(visited, sy) {
+		visited = append(visited, sy)
 		return errorInvalidTypeCycle(M, sy, visited)
 	}
 	visited = append(visited, sy)
 	top := len(visited)
 	for _, ref := range sy.Refs {
 		if !ref.Ignore {
-			err := checkTypeCycle(M, sy, visited[0:top])
+			err := checkTypeCycle(M, ref.S, visited[0:top])
 			if err != nil {
 				return err
 			}
@@ -1401,7 +1476,7 @@ func errorExportingUndefName(M *ir.Module, n *ir.Node) *Error {
 }
 
 func nameNotExported(M *ir.Module, n *ir.Node) *Error {
-	return ir.NewError(M, et.NameNotExported, n, "name not defined in module")
+	return ir.NewError(M, et.NameNotExported, n, "name not defined or exported in module")
 }
 
 func errorInvalidDependencyCycle(M *ir.Module, prev []*ir.Dependency, dep *ir.Dependency) *Error {
@@ -1435,19 +1510,23 @@ func moduleNotFound(M *ir.Module, n *ir.Node, baseFolder string, modID string) *
 	}
 }
 
-func errorInvalidConstCycle(M *ir.Module, prev []*ir.Symbol, s *ir.Symbol) *Error {
-	msg := s.Name + ": forms a invalid cycle"
-	for _, item := range prev {
-		msg += item.M.Name + ": is referenced by ^\n"
+func errorInvalidConstCycle(M *ir.Module, visited []*ir.Symbol, s *ir.Symbol) *Error {
+	msg := "'" + s.Name + "' forms a invalid cycle: "
+	refs := []string{}
+	for _, item := range visited {
+		refs = append(refs, item.Name)
 	}
+	msg += strings.Join(refs, " <- ") + "\n"
 	return ir.NewError(M, et.InvalidConstCycle, s.N, msg)
 }
 
 func errorInvalidTypeCycle(M *ir.Module, sy *ir.Symbol, visited []*ir.Symbol) *Error {
-	msg := sy.Name + ": forms a invalid cycle"
+	msg := sy.Name + ": forms a invalid cycle: "
+	refs := []string{}
 	for _, item := range visited {
-		msg += item.M.Name + ": is referenced by ^\n"
+		refs = append(refs, item.Name)
 	}
+	msg += strings.Join(refs, " <- ") + "\n"
 	return ir.NewError(M, et.InvalidTypeCycle, sy.N, msg)
 }
 

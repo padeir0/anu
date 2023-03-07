@@ -1,0 +1,6 @@
+proc main do
+begin
+	let a = F[1 = 2, 3 = 4]
+end
+
+proc F[a:int, b:int] int do a + b

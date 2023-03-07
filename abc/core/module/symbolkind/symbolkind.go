@@ -12,8 +12,6 @@ func (this SymbolKind) IsType() bool {
 
 const (
 	InvalidSymbolKind SymbolKind = iota
-	// Universe scope
-	Builtin
 	// Global scope
 	TypeAlias
 	TypeEnum

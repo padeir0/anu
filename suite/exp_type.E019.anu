@@ -1,0 +1,3 @@
+const C = 297
+
+proc F[a:C, c:C] C do a + c

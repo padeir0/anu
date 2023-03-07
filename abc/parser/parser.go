@@ -557,11 +557,14 @@ func _if(l *lxr.Lexer) (*mod.Node, *Error) {
 		Leaves: elseifs,
 		Kind:   nk.ElseIfList,
 	}
-	_else, err := _else(l)
-	if err != nil {
-		return nil, err
+	var Else *mod.Node
+	if l.Word.Kind == lk.Else {
+		Else, err = _else(l)
+		if err != nil {
+			return nil, err
+		}
 	}
-	kw.Leaves = []*mod.Node{cond, firstRes, elseiflist, _else}
+	kw.Leaves = []*mod.Node{cond, firstRes, elseiflist, Else}
 	return kw, nil
 }
 
@@ -1383,10 +1386,6 @@ func typePrefix(l *lxr.Lexer) (*mod.Node, *Error) {
 
 // SingleType = Name | NestedType | ProcType | ProductType | nil
 func singleType(l *lxr.Lexer) (*mod.Node, *Error) {
-	err := check(l, lk.Ident, lk.LeftParen, lk.LeftBrace, lk.Proc, lk.Nil)
-	if err != nil {
-		return nil, err
-	}
 	switch l.Word.Kind {
 	case lk.Ident:
 		return name(l)
