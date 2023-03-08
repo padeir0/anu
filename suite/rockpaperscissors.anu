@@ -1,0 +1,29 @@
+proc Winner[first:*i8, second:*i8] ?*i8 do
+  let rules = \{
+    {"Rock", \{
+            {"Paper",    "Paper"},
+            {"Scissors", "Rock"},
+            {"Rock",     "Draw"}}},
+    {"Paper", \{
+            {"Paper",    "Draw"},
+            {"Scissors", "Scissors"},
+            {"Rock",     "Paper"}}},
+    {"Scissors", \{
+            {"Paper",    "Scissors"},
+            {"Scissors", "Draw"},
+            {"Rock",     "Rock"}}},
+  } in
+  begin
+    for each section in rules do
+      if section.a == first then
+        for each rule in section.b do
+          if rule.a == second then return rule.b;
+    return nil;
+  end;
+
+proc main do
+	let answer = Winner["Rock", "Scissors"] in
+		switch type answer as x
+		case nil then exit[1]
+		case *i8 then
+			if x != "Rock" then exit[1]

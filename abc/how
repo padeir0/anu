@@ -13,9 +13,10 @@ resolution:
 	> check if types have bad cycles
 
 typechecking:
-	> check and internalize every global type
-	> descend into scopes, infer, typecheck and annotate all expressions
-	internalizing all stray types inside inner scopes
+    > check, build and internalize global type declarations
+	> infer, check, build and internalize unnamed types used in global symbols
+    > descend into scopes, infer, typecheck and annotate all expressions
+    internalizing all unnamed types inside inner scopes
 
 linearization:
 	> linearize constants in an init procedure

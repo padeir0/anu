@@ -38,6 +38,14 @@ func (this *Node) AddLeaf(other *Node) {
 	}
 }
 
+func (this *Node) PrependLeaf(other *Node) {
+	if this.Leaves == nil {
+		this.Leaves = []*Node{other}
+	} else {
+		this.Leaves = append([]*Node{other}, this.Leaves...)
+	}
+}
+
 func ast(n *Node, i int) string {
 	if n == nil {
 		return "nil"

@@ -93,7 +93,6 @@ A few guiding principles of the design:
 
 # Introduction <a name="introduction"/>
 
-
 # Lexical Elements <a name="lexical"/>
 
 Anu code files are ascii encoded text.

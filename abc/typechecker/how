@@ -1,0 +1,34 @@
+We build the type from the leaf nodes to the root,
+internalizing each node independently. The numbers
+serve only as example TypeIDs
+
+           0      0      0     1
+           v      v      v     v
+type A is int -> int | *int | nil
+     ^    ^--------^   ^---^ ^--^
+     17       14         15    1
+	      ^---------------------^
+		            16
+     
+            0   0
+            v   v
+type B as {int int}
+     ^    ^-------^
+	18        18
+
+            19  20  21
+            v   v   v
+type C enum C1, C2, C3
+     ^      ^--------^
+     23         22
+
+Note that on enums the main enum itself is not equal to its underlying type
+(The sum of all of it's options).
+
+This makes sure we keep track of all types in the program,
+making it easier to debug and lower it later,
+using a simple map (or array):
+    TypeID -> LowerTypeID
+
+It should also improve the performance of the typechecker, specially
+on array literals, and the performance of validation phases.

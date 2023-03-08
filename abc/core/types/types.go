@@ -179,10 +179,13 @@ func (this QualifiedName) String() string {
 
 // to compare by identity just compare TypeID
 // to compare by equivalency:
-//     two named: take the underlying TypeID and compare
-//     named with unamed: take the underlying TypeID from the named one
+//     two new types: take the underlying TypeID and compare
+//     new type with unnamed: take the underlying TypeID from the new type
 //         and the TypeID of the unamed one
-//     two unamed: compare TypeID
+//     two unnamed: compare TypeID
+//     two aliases: compare TypeID
+//     alias with new type: take the underlying TypeID from the new type
+//         and the TypeID of the alias
 type TypeSpace struct {
 	// all types unique by type identity
 	allTypes []*TypeWithName

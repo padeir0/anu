@@ -25,6 +25,9 @@ func Parse(filename string, contents string) (*mod.Node, *Error) {
 	if err != nil {
 		return nil, err
 	}
+	if l.Word.Kind != lk.EOF {
+		return nil, newError(l, ek.ExpectedEOF, "expected EOF")
+	}
 	computeRanges(n)
 	return n, nil
 }
@@ -158,7 +161,7 @@ func aliasList(l *lxr.Lexer) ([]*mod.Node, *Error) {
 		return nil, err
 	}
 	if list == nil {
-		return nil, newCompilerError(l, ek.ExpectedProd, "expected at least one alias")
+		return nil, newError(l, ek.ExpectedProd, "expected at least one alias")
 	}
 	return list, nil
 }
@@ -332,7 +335,7 @@ func unaryPrefix(s *lxr.Lexer) (*mod.Node, *Error) {
 	}
 	if preFirst != nil && suff == nil {
 		msg := "expected expression after prefix operator"
-		err := newCompilerError(s, ek.ExpectedProd, msg)
+		err := newError(s, ek.ExpectedProd, msg)
 		return nil, err
 	}
 	if suff == nil {
@@ -367,7 +370,7 @@ func unarySuffix(s *lxr.Lexer) (*mod.Node, *Error) {
 		return nil, err
 	}
 	if suFirst != nil {
-		suFirst.AddLeaf(fact)
+		suFirst.PrependLeaf(fact)
 		fact = suLast
 	}
 	return fact, nil
@@ -476,6 +479,9 @@ func field(l *lxr.Lexer) (*mod.Node, *Error) {
 	exp, err := expr(l)
 	if err != nil {
 		return nil, err
+	}
+	if exp == nil {
+		return nil, nil
 	}
 	if l.Word.Kind == lk.Assign {
 		eq, err := consume(l)
@@ -759,6 +765,9 @@ func _switch(l *lxr.Lexer) (*mod.Node, *Error) {
 			return nil, err
 		}
 	}
+	if body == nil {
+		return nil, newLexemeError(l, kw.Lexeme, ek.ExpectedProd, "expected switch body")
+	}
 	kw.AddLeaf(body)
 	return kw, nil
 }
@@ -772,9 +781,12 @@ func valueSwitch(l *lxr.Lexer) (*mod.Node, *Error) {
 	if err != nil {
 		return nil, err
 	}
-	valueCaseList := &mod.Node{
-		Leaves: cases,
-		Kind:   nk.ValueCaseList,
+	var valueCaseList *mod.Node
+	if cases != nil {
+		valueCaseList = &mod.Node{
+			Leaves: cases,
+			Kind:   nk.ValueCaseList,
+		}
 	}
 	var def *mod.Node
 	if l.Word.Kind == lk.Default {
@@ -782,6 +794,11 @@ func valueSwitch(l *lxr.Lexer) (*mod.Node, *Error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if valueCaseList == nil && def == nil {
+		// better error upwards
+		return nil, nil
 	}
 
 	return &mod.Node{
@@ -844,9 +861,12 @@ func typeSwitch(l *lxr.Lexer) (*mod.Node, *Error) {
 	if err != nil {
 		return nil, err
 	}
-	typeCaseList := &mod.Node{
-		Leaves: cases,
-		Kind:   nk.TypeCaseList,
+	var typeCaseList *mod.Node
+	if cases != nil {
+		typeCaseList = &mod.Node{
+			Leaves: cases,
+			Kind:   nk.TypeCaseList,
+		}
 	}
 	var def *mod.Node
 	if l.Word.Kind == lk.Default {
@@ -854,6 +874,10 @@ func typeSwitch(l *lxr.Lexer) (*mod.Node, *Error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	if typeCaseList == nil && def == nil {
+		// better error upwards
+		return nil, nil
 	}
 	return &mod.Node{
 		Leaves: []*mod.Node{cond, as, typeCaseList, def},
@@ -936,7 +960,7 @@ func letDeclList(l *lxr.Lexer) (*mod.Node, *Error) {
 		return nil, err
 	}
 	if decls == nil {
-		return nil, newCompilerError(l, ek.ExpectedProd, "let must have at least one declaration")
+		return nil, newError(l, ek.ExpectedProd, "let must have at least one declaration")
 	}
 	return &mod.Node{
 		Leaves: decls,
@@ -980,7 +1004,7 @@ func _set(l *lxr.Lexer) (*mod.Node, *Error) {
 		return nil, err
 	}
 	if exprs == nil {
-		return nil, newCompilerError(l, ek.ExpectedProd, "expected at least one expression")
+		return nil, newError(l, ek.ExpectedProd, "expected at least one expression")
 	}
 	assignees := &mod.Node{
 		Leaves: exprs,
@@ -1278,7 +1302,7 @@ func enum(l *lxr.Lexer) (*mod.Node, *Error) {
 		return nil, err
 	}
 	if list == nil {
-		return nil, newCompilerError(l, ek.ExpectedProd, "enums must have at least one option")
+		return nil, newError(l, ek.ExpectedProd, "enums must have at least one option")
 	}
 	kw.Leaves = list
 	return kw, nil
@@ -1359,7 +1383,7 @@ func typeFactor(l *lxr.Lexer) (*mod.Node, *Error) {
 	}
 	if start != nil && stype == nil {
 		msg := "expected type after prefix type operator"
-		err := newCompilerError(l, ek.ExpectedProd, msg)
+		err := newError(l, ek.ExpectedProd, msg)
 		return nil, err
 	}
 	if stype == nil {
@@ -1494,7 +1518,7 @@ func productType(l *lxr.Lexer) (*mod.Node, *Error) {
 	}
 
 	if items == nil {
-		return nil, newCompilerError(l, ek.ExpectedProd, "product types must have at least one field (otherwise, use nil)")
+		return nil, newError(l, ek.ExpectedProd, "product types must have at least one field (otherwise, use nil)")
 	}
 
 	_, err = expect(l, lk.RightBrace)
@@ -1595,7 +1619,7 @@ func check(l *lxr.Lexer, tpList ...lk.LexKind) *Error {
 		tpList,
 		l.Word.Kind)
 
-	err := newCompilerError(l, ek.ExpectedSymbol, message)
+	err := newError(l, ek.ExpectedSymbol, message)
 	return err
 }
 
@@ -1609,7 +1633,7 @@ func expect(l *lxr.Lexer, tpList ...lk.LexKind) (*mod.Node, *Error) {
 		tpList,
 		l.Word.Kind)
 
-	err := newCompilerError(l, ek.ExpectedSymbol, message)
+	err := newError(l, ek.ExpectedSymbol, message)
 	return nil, err
 }
 
@@ -1620,7 +1644,7 @@ func expectProd(l *lxr.Lexer, prod production, name string) (*mod.Node, *Error) 
 	}
 	if n == nil {
 		message := fmt.Sprintf("expected %v instead found %v", name, l.Word.Kind)
-		err := newCompilerError(l, ek.ExpectedProd, message)
+		err := newError(l, ek.ExpectedProd, message)
 		return nil, err
 	}
 	return n, err
@@ -1736,7 +1760,7 @@ func repeatUnaryRight(l *lxr.Lexer, prod production) (*mod.Node, *mod.Node, *Err
 		if n == nil {
 			break
 		}
-		n.AddLeaf(last)
+		n.PrependLeaf(last)
 		last = n
 	}
 	return first, last, nil
@@ -1803,14 +1827,23 @@ func repeatCommaList(l *lxr.Lexer, prod production) ([]*mod.Node, *Error) {
 }
 
 func expectedEOF(l *lxr.Lexer) *Error {
-	return newCompilerError(l, ek.ExpectedEOF, "unexpected symbol, expected EOF")
+	return newError(l, ek.ExpectedEOF, "unexpected symbol, expected EOF")
 }
 
-func newCompilerError(l *lxr.Lexer, t ek.ErrorKind, message string) *Error {
+func newError(l *lxr.Lexer, t ek.ErrorKind, message string) *Error {
 	return &Error{
 		Code:     t,
 		Severity: sv.Error,
 		Location: &Location{Range: &l.Word.Range, File: l.File},
+		Message:  message,
+	}
+}
+
+func newLexemeError(l *lxr.Lexer, lexeme *lex.Lexeme, t ek.ErrorKind, message string) *Error {
+	return &Error{
+		Code:     t,
+		Severity: sv.Error,
+		Location: &Location{Range: &lexeme.Range, File: l.File},
 		Message:  message,
 	}
 }

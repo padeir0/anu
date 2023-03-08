@@ -12,6 +12,7 @@ import (
 	sk "abc/core/module/symbolkind"
 	sv "abc/core/severity"
 
+	"fmt"
 	"io/ioutil"
 	"strings"
 )
@@ -135,7 +136,7 @@ func resolveInnerProc(M *ir.Module, sy *ir.Symbol) *Error {
 		args := sig.Leaves[0]
 		for _, arg := range args.Leaves {
 			var name *ir.Node
-			if len(arg.Leaves) == 2 {
+			if arg.Lexeme.Kind == lk.Colon {
 				name = arg.Leaves[0]
 			} else {
 				name = arg
@@ -212,7 +213,7 @@ func resolveTypeEnum(M *ir.Module, sy *ir.Symbol) *Error {
 	def := sy.N.Leaves[1]
 	for _, leaf := range def.Leaves {
 		var name string
-		if len(leaf.Leaves) == 2 {
+		if leaf.Lexeme.Kind == lk.Is {
 			name = leaf.Leaves[0].Lexeme.Text
 		} else {
 			name = leaf.Lexeme.Text
@@ -227,7 +228,7 @@ func resolveTypeEnum(M *ir.Module, sy *ir.Symbol) *Error {
 }
 
 func resolveTypeEnumOption(M *ir.Module, sy *ir.Symbol) *Error {
-	if len(sy.N.Leaves) == 2 {
+	if sy.N.Lexeme.Kind == lk.Is {
 		texp := sy.N.Leaves[1]
 		// recursion is allowed
 		return resolveTypeExpr(M, sy, M.Global, false, true, texp)
@@ -266,7 +267,7 @@ func resolveProc(M *ir.Module, sy *ir.Symbol) *Error {
 		args := sig.Leaves[0]
 		if args != nil {
 			for _, leaf := range args.Leaves {
-				if len(leaf.Leaves) == 2 {
+				if leaf.Lexeme.Kind == lk.Colon {
 					typeexpr := leaf.Leaves[1]
 					err := resolveTypeExpr(M, sy, M.Global, false, false, typeexpr)
 					if err != nil {
@@ -452,7 +453,7 @@ func resolveLetExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node, is
 		}
 		for _, decl := range decls.Leaves {
 			var name *ir.Node
-			if len(decl.Leaves) == 2 {
+			if decl.Lexeme.Kind == lk.Colon {
 				name = decl.Leaves[0]
 				texp := decl.Leaves[1]
 				err := resolveTypeExpr(M, sy, scope, false, false, texp)
@@ -675,6 +676,10 @@ func resolveValueSwitchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.
 		return err
 	}
 	valueCaseList := n.Leaves[2]
+	if valueCaseList == nil {
+		fmt.Println(sy.N)
+		fmt.Println(n)
+	}
 	for _, vcase := range valueCaseList.Leaves {
 		exps := vcase.Leaves[0]
 		for _, expr := range exps.Leaves {
@@ -767,7 +772,7 @@ func resolveArrayMapLitExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.
 		return err
 	}
 	for _, leaf := range fields.Leaves {
-		if len(leaf.Leaves) == 2 {
+		if leaf.Lexeme != nil && leaf.Lexeme.Kind == lk.Assign {
 			keyExpr := leaf.Leaves[0]
 			err := resolveExpr(M, sy, scope, keyExpr, isConst)
 			if err != nil {
@@ -779,7 +784,7 @@ func resolveArrayMapLitExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.
 				return err
 			}
 		} else {
-			expr := leaf.Leaves[0]
+			expr := leaf
 			err := resolveExpr(M, sy, scope, expr, isConst)
 			if err != nil {
 				return err
@@ -798,7 +803,7 @@ func resolveProductLitExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.N
 		return err
 	}
 	for _, leaf := range fields.Leaves {
-		if len(leaf.Leaves) == 2 {
+		if leaf.Lexeme != nil && leaf.Lexeme.Kind == lk.Assign {
 			field := leaf.Leaves[0]
 			// validation of field names is deferred to typechecking
 			if field.Lexeme.Kind != lk.Ident {
@@ -810,7 +815,7 @@ func resolveProductLitExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.N
 				return err
 			}
 		} else {
-			expr := leaf.Leaves[0]
+			expr := leaf
 			err := resolveExpr(M, sy, scope, expr, isConst)
 			if err != nil {
 				return err
@@ -823,7 +828,7 @@ func resolveProductLitExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.N
 func resolveCallOrIndexExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
 	for _, leaf := range n.Leaves {
 		var expr *ir.Node
-		if leaf.Lexeme.Kind == lk.Assign {
+		if leaf.Lexeme != nil && leaf.Lexeme.Kind == lk.Assign {
 			field := leaf.Leaves[0]
 			// validation of field names is deferred to typechecking
 			if field.Lexeme.Kind != lk.Ident {
