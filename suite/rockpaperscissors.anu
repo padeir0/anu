@@ -14,16 +14,16 @@ proc Winner[first:*i8, second:*i8] ?*i8 do
             {"Rock",     "Rock"}}},
   } in
   begin
-    for each section in rules do
+    for section in rules do
       if section.a == first then
-        for each rule in section.b do
+        for rule in section.b do
           if rule.a == second then return rule.b;
     return nil;
   end;
 
 proc main do
 	let answer = Winner["Rock", "Scissors"] in
-		switch type answer as x
+		match answer as x
 		case nil then exit[1]
 		case *i8 then
 			if x != "Rock" then exit[1]

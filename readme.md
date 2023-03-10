@@ -62,13 +62,11 @@ A few guiding principles of the design:
         2. [Block](#block)
         3. [Product Literal](#productliteral)
         4. [Array/Map Literal](#arraymapliteral)
-        5. [For](#for)
-            1. [Conditional](#conditional)
-            2. [Iterative](#iterative)
-            3. [Range](#range)
+        5. [While](#while)
+        6. [For](#for)
+        7. [Range](#range)
         6. [Switch](#switch)
-            1. [Value Switch](#valueswitch)
-            2. [Type Switch](#typeswitch)
+        7. [Match](#match)
         7. [If](#if)
         8. [EarlyReturn](#earlyreturn)
         9. [Let](#let)
@@ -82,7 +80,7 @@ A few guiding principles of the design:
     5. [Castable](#castable)
     6. [Immutable/Mutable](#immutablemutable)
     7. [Addressable](#addressable)
-    8. [Moving Semantics](#movingsemantics)
+    8. [Ownership Semantics](#ownershipsemantics)
     9. [Freeing Semantics](#freeingsemantics)
     10. [Scopes](#scopes)
 5. [Misc](#misc)
@@ -120,11 +118,11 @@ cannot be used as symbol names.
 ```
 import  from     export  proc  const   type   
 begin   end      is      or    and     not    
-do      for      if      each  in      switch 
+do      for      if      take  in      switch 
 case    default  elseif  else  return  let    
 set     as       to      then  range   nil    
 new     remove   true    false void    all    
-enum
+enum    match    while
 ```
 
 ## Int <a name="int"/>
@@ -409,7 +407,7 @@ Signature = (Arguments (Return)?)?
 Arguments = "[" DeclList? "]"
 Return = TypeExpr
 DeclList = Decl ("," Decl)* ","?
-Decl = id TypeAnnot?
+Decl = "take"? id TypeAnnot?
 TypeAnnot = ":" TypeExpr
 ```
 
@@ -443,7 +441,7 @@ expression is discarded, and the type defaults to `nil`. Example:
 
 ```
 proc F do
-  for range 0 to 10 do
+  range 0 to 10 do
     print["Hello\n"];
 ```
 
@@ -558,7 +556,7 @@ void | T     => T
 ```
 
 The only operations allowed with sum types are [`is`](#isoperator),
- [`switch type`](#typeswitch) and [`^`](#)
+ [`match`](#typeswitch) and [`^`](#)
 
 Example of sums:
 
@@ -637,7 +635,9 @@ Automatic dereferencing permits references to be used like their base type.
 
 ```
 ProcType = "proc" TypeArguments TypeExpr
-TypeArguments = "[" TypeExprList? "]"
+TypeArguments = "[" TypeArgList? "]"
+TypeArgList = TypeArg ("," TypeArg)* ","?
+TypeArg = "take"? TypeExpr
 ```
 
 Procedure types are built using the `proc` keyword, followed by
@@ -698,8 +698,8 @@ The key of a map has to be hashable and comparable,
 as such, it cannot be or contain a reference, procedure or map type.
 
 An map with `nil` as the value type should raise a warning, since look-up,
-insertion and removing operations will not work properly in these cases. If
-the user wants to use the map as a set, he can do the following:
+insertion and removing operations use `nil` to signify absence of value.
+If the user wants to use the map as a set, he can do the following:
 
 ```
 type Found is nil
@@ -981,7 +981,7 @@ type. The type specified must be an option inside the sum.
 ```
 proc PrintFile[file:*i8] ?IO::Error do
   begin
-    let a = IO::Open[file, IO::ReadOnly]^&File
+    let a = IO::Open[file, IO::ReadOnly]^&IO::File
     let contents = IO::ReadAll[a]^*i8
     IO::Print[contents]
     return nil
@@ -993,10 +993,10 @@ The above code can be desugared into:
 ```
 proc PrintFile[file:*i8] ?IO::Error do
   begin
-    let a = switch type IO::Open[file, IO::ReadOnly] as v
+    let a = match IO::Open[file, IO::ReadOnly] as v
             case IO:Error then return v
-            case IO::File then v
-    let contents = switch type IO::ReadAll[a] as v
+            case &IO::File then v
+    let contents = match IO::ReadAll[a] as v
                    case IO:Error then return v
                    case *i8 then v
     IO::Print[contents]
@@ -1024,8 +1024,11 @@ Factor
 | int | bool | char | string | nil
 | ArrayMapLit
 | ProductLit
+| While
 | For
+| Range
 | Switch
+| Match
 | If
 | NestedExpr
 | Block
@@ -1139,67 +1142,56 @@ sum of the type of all key expressions, and a value type equal to the
 sum of the type of all value expressions. In other words, a literal
 `\{"a" = 1, 1 = "a", 1 = 1}` has type `*i8|int -> *i8|int`.
 
-### For <a name="for"/>
+### While <a name="while"/>
 
 ```
-For = "for" (Conditional | Iterative | Range)
-```
-
-`for` is the loop construct in anu, it has 3 forms,
-conditional, iterative and ranged.
-
-The type of the `for` expression is always an array of the type
-of it's body.
-`for true do 1;`,
-`for each item in array do 1;` and
-`for range 0 to 10 do 1;` all have type `*int`
-
-#### Conditional <a name="conditional"/>
-```
-Conditional = Expr "do" Expr
+While = "while" Expr "do" Expr
 ```
 
 The conditional form is the simplest form of looping,
 it takes the form of:
 
 ```
-for <cond> do <expr>
+while <cond> do <expr>
 ```
 
 Where `<cond>` is an expression of type `bool`. It executes the `<expr>`
 until `<cond>` equals `false`.
 
-#### Iterative <a name="iterative"/>
+### For <a name="for"/>
+
 ```
-Iterative = "each" id ("," id)? "in" Expr "do" Expr
+For = "for" id ("," id)? "in" Expr "do" Expr
 ```
 
 The iterative form is used to iterate over items of an array or map,
-a `for each` expression will loop until all items of an array or map are
+a `for` expression will loop until all items of an array or map are
 evaluated (or until an early return occurs). It takes the form of:
 
 ```
-for each <id> in <collection> do <expr>
+for <id> in <collection> do <expr>
 ```
 
 Where `<collection>` is an expression with array or map type, it
 evaluates `<expr>` until all items are consumed. The `<id>` name
 is valid inside `<expr>`. A second identifier might be used
-to represent other values. Both identifiers are immutable.
+to represent other values.
 
 Both identifiers are immutable. Modifying the collection should not result
 in the value of the identifiers being modified, and should not result in
-runtime errors.
+runtime errors. These identifiers follow ownership semantics as usual,
+and if the collection contains references, it will be invalid inside
+and after the loop..
 
 If the collection is an array, the type of `<id>` is the base type of
-the array, and if a second identifier is used (`for each <id>, <id> in ...`)
+the array, and if a second identifier is used (`for <id>, <id> in ...`)
 The second identifier represents the index of the item, and has type `int`.
 
 If the collection is a map, the type of `<id>` is the key type of the map,
 and if a second identifier is used, it's type will be the 
 value type of the map.
 
-Given a `for` in the form of: `for each <first>, <second> in <collection> do ...`
+Given a `for` in the form of: `for <first>, <second> in <collection> do ...`
 It can be summarized in the following table
 
 | collection | first    | second      |
@@ -1207,17 +1199,17 @@ It can be summarized in the following table
 | array `*T` | item `T` | index `int` |
 | map `K->V` | key `K`  | value `V`   |
 
-#### Range <a name="range"/>
+### Range <a name="range"/>
 ```
 Range = "range" Expr "to" Expr ("as" id)? "do" Expr
 ```
 
-The `for range` loop iterates in a range of numbers, incrementally
+The `range` loop iterates in a range of numbers, incrementally
 or decrementally, and evaluates the expression once for each number.
 It takes the form:
 
 ```
-for range <start> to <end> as <id> do <expr>
+range <start> to <end> as <id> do <expr>
 ```
 
 Where `as <id>` may be omitted. Both `<start>` and `<end>`
@@ -1237,13 +1229,13 @@ If `<start>` is equal `<end>` the loop will not evaluate `<expr>`
 
 ### Switch <a name="switch"/>
 ```
-Switch = "switch" (TypeSwitch | ValueSwitch)
+Switch = "switch" Expr ValueCase* Default?
+ValueCase = "case" ExprList "then" Expr
+Default = "default" Expr
 ```
 
-`switch` expressions are like `if` expressions
-but they are specialized to constant values. There are
-two kinds of switches, a type switch and a value switch,
-one operates on values, the other operates on types.
+`switch` expression is like a `if` expression
+but its specialized to constant values.
 
 ```
 switch <expr>
@@ -1253,8 +1245,8 @@ case <const_exprN+1>, ..., <const_exprN+M> then <expr2>
 default <exprN>
 ```
 
-The output type of value and type switches work the same way,
-similarly to `if`s, the output type of a `switch` expression is the sum
+The output type of switch works similarly to `if`s,
+the output type of a `switch` expression is the sum
 of the types of all `then` expressions. The type of the previous
 example would be:
 `typeof(<expr1>) | typeof(<expr2>) | ... | typeof(<exprN>)`.
@@ -1270,15 +1262,6 @@ case <const_expr> then <expr1>
 ...
 case <const_expr> then <exprN>
 ```
-
-#### Value Switch <a name="valueswitch"/>
-```
-ValueSwitch = Expr ValueCase* Default?
-ValueCase = "case" ExprList "then" Expr
-Default = "default" Expr
-```
-
-A value switch takes the following form:
 
 ```
 switch <expr>
@@ -1296,20 +1279,23 @@ if it's equal, it jumps to the `then` part.
 With this evaluation strategy, it's not an error to have two or more
 equal cases in a switch, but compilers should warn if that happens.
 
-#### Type Switch <a name="typeswitch"/>
+### Match <a name="match"/>
 
 ```
-TypeSwitch = "type" Expr ("as" id) TypeCase* Default?
+Match = "match" Expr ("as" id) TypeCase* Default?
 TypeCase = "case" TypeExprList "then" Expr
+Default = "default" Expr
 ```
 
-The type switch is similar to the value switch but it operates on
-types, types in anu are always static. The type switch may also create an
-*immutable* alias of the value being switched on.
+The `match` is similar to the `switch` but it operates on
+types, types in anu are always static. The `match` may also create an
+alias of the value being matched on, this alias is always immutable,
+and follows ownership semantics just as normal variables. 
+
 In the following example `as <id>` may be omitted.
 
 ```
-switch type <expr> as <id>
+match <expr> as <id>
 case <type_expr0>, ..., <type_exprN> then <expr1>
 case <type_exprN+1>, ..., <type_exprN+M> then <expr2>
 ...
@@ -1326,8 +1312,8 @@ If the `<expr>` is a mutable variable and is modified inside a `case`,
 the value of `<id>` will not change, it will remain the same as it was on
 the beginning of the switch.
 
-The output type of the `switch type` expression follows the same rules
-as the value switch.
+The output type of the `match` expression follows the same rules
+as the `switch` expression.
 
 ### If <a name="if"/>
 ```
@@ -1763,11 +1749,11 @@ proc P[a:int, b:int] int do
   begin
     let c = a
 
-    for each item in \{1, 2, 3} do 1+1;
+    for item in \{1, 2, 3} do 1+1;
 
-    for range 0 to 10 as i do i+1
+    range 0 to 10 as i do i+1
 
-    switch type 1:?int as v
+    match 1:?int as v
     case int do 1
     default nil
 
@@ -1775,13 +1761,95 @@ proc P[a:int, b:int] int do
   end
 ```
 
-## Moving Semantics <a name="movingsemantics"/>
+## Ownership Semantics <a name="ownershipsemantics"/>
 
-Moving semantics guarantee that all references in Anu are the sole owner
-of the objects they point to.
-Whenever a reference is copied it's ownership is moved and the contents
-of it's previous container becomes invalid. Whenever a variable has it's
-address taken, the variable becomes invalid.
+Ownership semantics are what makes Anu's memory management scheme
+be decidable at compile time. **It makes sure there's at most a single
+live reference to any object**, so that when an object stops being owned
+it can safely be freed.
+
+**Procedures are the agents that can own or borrow objects**,
+only a single live reference to an object must exist inside a procedure,
+so it's impossible for a procedure to both own and borrow an object
+at the same time. 
+**In any procedure, an object is either borrowed or owned**.
+
+**Borrowed objects cannot be invalid on procedure return**,
+every borrower must ensure that the object remains valid so
+the owner can still use it.
+A procedure that owns an object is the only one capable of completely
+invalidate it, in other words, it's the only one capable of
+completely freeing that object.
+
+However, **you are not allowed return borrowed objects**,
+guarenteeing that these references will be tied to the stack frame
+of each borrower, dying as the borrower returns.
+
+A borrower may still mutate the contents of the object, an thus
+may end up freeing secondary objects that the main object pointed to.
+But the main object must remain valid on procedure return.
+In other words a procedure call cannot invalidate a borrowed reference,
+so knowledge of the validity of a reference remains local.
+
+**The only way to create a borrowed object from a owned object
+is through procedure calls,
+and the only way to create an owned object from a borrowed one
+is through ownership trading.** This makes sure objects can't escape
+their procedures arbitrarely, for example:
+
+```
+type Box is {.Ref &int}
+proc P[a:&int] Box do
+     ^ error: borrowed reference 'a' is invalid on procedure return
+	let box = {:Box Ref = a}
+		in box
+```
+
+However, it's possible to trade ownership and end up returning
+a borrowed reference:
+
+```
+type Box is {.Ref &int}
+proc P[a:&Box] &int do
+  let a = 1,
+      b = &a
+      in begin
+           set b <-> a.Ref # trade ownership
+           b
+         end
+```
+
+Trading ownership is fine because it never invalidates the borrowed
+object.
+
+**An object may be borrowed only once per procedure call, and can't
+be borrowed and have it's ownership taken in the same call.**
+This ensures there's no way to duplicate references or have a
+procedure own and borrow the same object. The following procedures
+are in error:
+
+```
+proc A do
+	let a = 1 in
+		B[&a, &a];
+           ^ error: duplicate borrowing
+
+proc B[a:&int, b:&int] do ...;
+
+proc C do
+	let a = 1 in
+		D[&a, &a];
+           ^ error: borrowing and passing ownership in the same call
+
+proc D[a:&int, take b:&int] do ...;
+```
+
+Whenever an owned (or borrowed) reference is copied
+it's ownership rights (or borrowing rights) are moved and the contents
+of it's previous container becomes invalid. Similarly,
+whenever a variable has it's address copied,
+the variable becomes invalid because the ownership rights
+(or borrowing rights) of the object has moved to the reference.
 
 ```
 proc main do
@@ -1790,7 +1858,7 @@ proc main do
     #        v moves 'a'
     let b = &a
 
-    #       v error: use of moved variable
+    #       v error: use of variable with moved ownership
     let c = a + 1;
   end
 ```
@@ -1814,11 +1882,11 @@ proc main do
     #   ^ 'b' becomes valid again
   end
 
-proc F[&int] do nil
+proc F[take a:&int] do nil
 ```
 
-If any branch of a procedure moves a reference, after the branch the
-reference is invalid:
+If any branch of a procedure moves the ownership of a reference,
+after the branch the reference is invalid:
 
 ```
 proc main do
@@ -1826,11 +1894,11 @@ proc main do
     let a = 0
     if true then F[&a]
 
-    #       v error: use of possibly moved variable
+    #       v error: use of possibly invalid reference
     let b = a + 1;
   end
 
-proc F[&int] do nil;
+proc F[take a:&int] do nil;
 ```
 
 For loops, if any variable is invalid at the end of the loop expression
@@ -1840,26 +1908,26 @@ it's also invalid in the beginning of the loop:
 proc main do
   begin
     let a = 0
-    #             v error: variable was moved on previous loop iteration
-    for true do F[&a]
+    #             v error: variable ownership was moved on previous loop iteration
+    while true do F[&a]
   end
 
-proc F[&int] do nil;
+proc F[take a:&int] do nil;
 ```
 
-References are also moved when creating array, map or
-product literals and passing parameters to procedures.
+Onwership of references are also moved when creating array, map or
+product literals and passing values to 'take' parameters of procedures.
 
 ```
 proc main do
   begin
     let a = 0, b = 1
     let z = \{&a, &b}
-    #          ^   ^ both are moved
+    #          ^   ^ ownership of both are moved
   end
 ```
 
-If *any reference* from inside an array or
+If *any* object ownership from inside an array or
 map is moved, the whole array/map is invalid until a full copy or reset,
 since it is impossible in the general case to determine whether arbitrary
 indexes inside an array or map have been restored.
@@ -1873,14 +1941,14 @@ proc main do
     #   ^ moves reference from inside 'z'
 
     set z[0] = &c
-    #        ^ error: setting item of array with moved references
+    #        ^ error: setting item of array with possibly freed objects
 
     let d = 3
     set z = \{&d}
     #   ^ now 'z' is valid again
   end
 
-proc F[&int] do nil;
+proc F[take a:&int] do nil;
 ```
 
 The swap operator `<->` is specially useful in those cases, you can swap
@@ -1906,6 +1974,23 @@ proc main do
 proc F[?&int] do nil;
 ```
 
+This allows you to trade object ownership, say for example you have
+an object of type `{.Ref &int, .Value int}`, you can create a variable
+of type `&int` and swap it with the field `.Ref`:
+
+```
+type T is {.Ref &int, .Value int}
+proc B[a:&T] do 
+	begin
+		let one = 1
+		let mine = &one
+		set a.Ref <-> mine
+	end
+```
+
+In the previous example, since `mine` is owned by `B`, then the previous
+object pointed by `a.Ref` is now owned by `B`, and vice versa.
+
 The `..` and `..=` operators are also subject to moving semantics
 since they create a copy of the array:
 
@@ -1918,7 +2003,7 @@ proc A do
 
     #       v the contents of 'b' are moved
     set b = b .. b;
-    #            ^ error: use of container with moved references
+    #            ^ error: use of container with possibly invalid references
   end
 
 proc B do
@@ -1929,12 +2014,12 @@ proc B do
 
     #         v moves the contents of 'b'
     set b ..= b;
-    #   ^ error: use of container with moved references
+    #   ^ error: use of container with possibly invalid references
   end 
 ```
 
-In a `switch` expresion, aliasing moves the variable or the contents
-of the container.
+In a `match` expresion, aliasing moves the rights from the value
+to the alias.
 
 ```
 proc main do
@@ -1942,23 +2027,24 @@ proc main do
     let a = 0
     let z :int | &int = &a
 
-    switch type z as x
-    #                ^ moves the contents of 'z'
+    match z as x
+    #     ^    ^ moves ownership from 'z' to 'x'
     case &int then F[x]
-    #                ^ moves the contents of 'x'
+    #                ^ ownership of 'x' is passed
     case int then nil
 
     let abc = z
-    #         ^ error: use of container with moved references
+    #         ^ error: use of container with possibly invalid references
   end
 
-proc F[&int] do nil;
+proc F[take a:&int] do nil;
 ```
 
-For `for each ... in ...` loops, aliasing also borrows the variable
-or the contents of the container. But if the alias is moved, the whole
-collection becomes invalid. Aliasing shadows the collection being
-iterated on.
+For `for ... in ...` loops, the loop variable moves ownership
+or borrowing rights from the collection, but since objects are 
+guaranteed to appear once per iteration, the collection is invalid,
+but the loop goes on. Inside and after the loop, the collection
+is invalid.
 
 ```
 proc main do
@@ -1966,15 +2052,18 @@ proc main do
     let a = 0, b = 1, c = 2
     let z = \{&a, &b, &c} 
 
-    #                v error: use of container with moved references
-    for each item in z do
+    for item in z do
       F[item]
+
+    let ohno = z
+    #          ^ error: use of container with possibly invalid references
   end
 
-proc F[&int] do nil;
+proc F[take a:&int] do nil;
 ```
 
-The following is a valid way to operate on references inside a `for`:
+The following is way to operate on references inside a `for` without
+invalidating the collection:
 
 ```
 proc main do
@@ -1983,7 +2072,7 @@ proc main do
     let z = \{:*?&int &a, &b, &c}
 
     # frees all objects referenced by 'z'
-    for range 0 to z.length as index do
+    range 0 to z.length as index do
       begin
         let v :?&int = nil
         set z[index] <-> v
@@ -1993,14 +2082,14 @@ proc main do
     # 'z' is still valid here (it's full of nils)
   end
 
-proc F[?&int] do nil;
+proc F[take a:?&int] do nil;
 ```
 
 Returning a reference from a procedure also returns it's ownership,
-in the following procedure, `F` essentially borrows `a`, and returns it.
+in the following procedure, `F` essentially takes `a`, and returns it.
 
 ```
-proc F[a:&int] &int do a
+proc F[take a:&int] &int do a
 ```
 
 ## Freeing Semantics <a name="freeingsemantics"/>
@@ -2009,8 +2098,9 @@ Objects are freed as soon as possible. An object may be freed when:
 
  - You change the value of a reference
  - You change the value of an object that contains references
- - A reference value is not returned and no longer used in a scope that has it's ownership
- - A reference value is discarded
+ - A reference with ownership rights is not returned
+   and is no longer used
+ - A reference with ownership rights is discarded
 
 Examples: 
 
@@ -2100,7 +2190,7 @@ unless it's ownership is moved.
 proc F do
   begin
     let a = 1
-    for range 0 to 10 do
+    range 0 to 10 do
       set a += 1
     # 'a' is freed only here
   end
@@ -2113,7 +2203,7 @@ proc G do
   begin
     let a = 1
     let b = &a
-    for range 0 to 10 do
+    range 0 to 10 do
       begin
         F[b] # frees either 'a' or 'c'
         let c = 1
@@ -2124,8 +2214,8 @@ proc G do
     # and will be freed after the for loop
   end
 
-# 'a' will be freed inside this function
-proc F[&int] do nil;
+# 'a' and 'c' will be freed inside this function
+proc F[take a:&int] do nil;
 ```
 
 ## Scopes <a name="scopes"/>
@@ -2181,24 +2271,24 @@ as described, note that the `do ...` can't shadow the loop variables
 unless a new scope is added (`begin`/`end`).
 
 ```
--0---v                                       v--1--v
-proc A[array:*int] do for each index, item in array do ...;
-      ^-----1----------------  ^----2----^             ^--2---
+-0---v                                  v--1--v
+proc A[array:*int] do for index, item in array do ...;
+      ^-----1------------ ^----2----^             ^--2---
 
 -0---v
-proc A[array:*int] do for range 0 to 10 as  i  do ...;
-      ^----1--------------------------^   ^-2--------
+proc A[array:*int] do range 0 to 10 as  i  do ...;
+      ^----1----------------------^   ^-2--------
 
 -0---v
-proc A[array:*int] do for range 0 to 10 as  i  do begin ... end
-      ^----1--------------------------^   ^-2---^ ^-----3-----^
+proc A[array:*int] do range 0 to 10 as  i  do begin ... end
+      ^----1-----------------------^ ^--2---^ ^-----3-----^
 ```
 
-The `switch type` behaves similarly, where the `as` keyword
+The `match` behaves similarly, where the `as` keyword
 creates a new scope with a single variable.
 ```
 -0---v v-------1-------------------v v-2-----------------
-proc F [a:SomeSum] do switch type a as x case ... then ...
+proc F [a:SomeSum] do match a as x case ... then ...
 ```
 
 The `let` construct has a more complicated scope rule, in the following
@@ -2250,7 +2340,7 @@ Signature = (Arguments (Return)?)?
 Arguments = "[" DeclList? "]"
 Return = TypeExpr
 DeclList = Decl ("," Decl)* ","?
-Decl = id TypeAnnot?
+Decl = "take"? id TypeAnnot?
 
 TypeAnnot = ":" TypeExpr
 
@@ -2271,7 +2361,9 @@ ProductType = "{" Naming ("," Naming)* ","? "}"
 Naming = ("." id)? TypeExpr
 NestedType = "(" TypeExpr ")"
 ProcType = "proc" TypeArguments TypeExpr
-TypeArguments = "[" TypeExprList? "]"
+TypeArguments = "[" TypeArgList? "]"
+TypeArgList = TypeArg ("," TypeArg)* ","?
+TypeArg = "take"? TypeExpr
 
 TypeExprList = TypeExpr ("," TypeExpr)* ","?
 
@@ -2304,8 +2396,11 @@ Factor
 | int | bool | char | string | nil
 | ArrayMapLit
 | ProductLit
+| While
 | For
+| Range
 | Switch
+| Match
 | If
 | NestedExpr
 | Block
@@ -2326,16 +2421,16 @@ ComplexLitBody = "{" TypeAnnot? FieldList? "}"
 FieldList = Field ("," Field)* ","?
 Field = Expr ("=" Expr)?
 
-For = "for" (Conditional | Iterative | Range)
-Conditional = Expr "do" Expr
-Iterative = "each" id ("," id)? "in" Expr "do" Expr
+While = "while" Expr "do" Expr
+For = "for" id ("," id)? "in" Expr "do" Expr
 Range = "range" Expr "to" Expr ("as" id)? "do" Expr
 
-Switch = "switch" (TypeSwitch | ValueSwitch)
-ValueSwitch = Expr ValueCase* Default?
-TypeSwitch = "type" Expr ("as" id) TypeCase* Default?
+Switch = "switch" Expr ValueCase* Default?
 ValueCase = "case" ExprList "then" Expr
+
+Match = "match" Expr ("as" id) TypeCase* Default?
 TypeCase = "case" TypeExprList "then" Expr
+
 Default = "default" Expr
 
 If = "if" Expr "then" Expr ElseIf* Else?
@@ -2355,10 +2450,11 @@ New = "new" TypeAnnot "[" FieldList? "]"
 
 keyword = "import" | "from"    | "export" | "proc" | "const"  | "type"   |
           "begin"  | "end"     | "is"     | "or"   | "and"    | "not"    |
-          "do"     | "for"     | "if"     | "each" | "in"     | "switch" |
+          "do"     | "for"     | "if"     | "in"   | "switch" | "while"  |
           "case"   | "default" | "elseif" | "else" | "return" | "let"    |
           "set"    | "as"      | "to"     | "then" | "range"  | "nil"    |
-          "new"    | "remove"  | "void"   | "true" | "false"
+          "new"    | "remove"  | "void"   | "true" | "false"  | "match"  |
+          "take"   | "all"     | "enum"
 
 assignOp = "=" | "-=" | "+=" | "*=" | "..=" | "<->" | "remove"
 
@@ -2399,7 +2495,7 @@ and `stderr` constants for file descriptors and the `fd` type.
 
 Maybe never:
  - Rank 1 polymorphism with constraints and inference
- - `target` construct for build tags aroung symbols
+ - `data` construct for metadata tags aroung symbols
  - `asm` procedures and a clear, well defined ABI
 
 # Examples <a name="examples"/>
@@ -2423,9 +2519,9 @@ proc Winner[first:*i8, second:*i8] ?*i8 do
             {"Rock",     "Rock"}}},
   } in
   begin
-    for each section in rules do
+    for section in rules do
       if section.a == first then
-        for each rule in section.b do
+        for rule in section.b do
           if rule.a == second then return rule.b;
     return nil;
   end;
@@ -2445,10 +2541,10 @@ type Person is {
 }
 
 proc JsonToPerson[j:Json] ?*Person do
-    switch type j as v
+    match j as v
     case *Json then
-        for each item in v do
-            switch type item as person
+        for item in v do
+            match item as person
             case *i8 -> Json then
                 {:Person
                     GetName[person]^*i8,
@@ -2457,10 +2553,10 @@ proc JsonToPerson[j:Json] ?*Person do
             default return nil
 
 proc GetName[person:*i8 -> Json] ?*i8 do
-    switch type person["name"]^Json as name
+    match person["name"]^Json as name
     case *i8 then name
 
 proc GetAge[person:*i8 -> Json] ?int do
-    switch type person["age"]^Json as age
+    match person["age"]^Json as age
     case int then age
 ```
