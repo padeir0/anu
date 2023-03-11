@@ -22,8 +22,8 @@ proc Winner[first:*i8, second:*i8] ?*i8 do
   end;
 
 proc main do
-	let answer = Winner["Rock", "Scissors"] in
-		match answer as x
-		case nil then exit[1]
-		case *i8 then
-			if x != "Rock" then exit[1]
+    let answer = Winner["Rock", "Scissors"] in
+        match answer as x
+        case nil then exit[1]
+        case *i8 then
+            if x != "Rock" then exit[1]

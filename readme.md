@@ -911,7 +911,7 @@ The output type of an indexing operation is the an option of base type of the ar
 (if the array has type `*i8` then indexing it will result in `?i8`)
 and the output type for slicing operations are *identical* to the original
 array's type. Slicing creates a new copy of a section of the array,
-and as such is subject to moving semantics.
+and as such is subject to ownership semantics.
 
 ```
 proc main do
@@ -1541,7 +1541,7 @@ all items of the array in the right side, it will not allocate a new
 array.
 
 Since `..` copies items from one array to the other,
-`..=` is also subject to moving semantics,
+`..=` is also subject to ownership semantics,
 specially `set a ..= a` will not work if the type of `a` contains
 references.
 
@@ -1801,8 +1801,8 @@ their procedures arbitrarely, for example:
 type Box is {.Ref &int}
 proc P[a:&int] Box do
      ^ error: borrowed reference 'a' is invalid on procedure return
-	let box = {:Box Ref = a}
-		in box
+  let box = {:Box Ref = a}
+    in box
 ```
 
 However, it's possible to trade ownership and end up returning
@@ -1830,15 +1830,15 @@ are in error:
 
 ```
 proc A do
-	let a = 1 in
-		B[&a, &a];
+  let a = 1 in
+    B[&a, &a];
            ^ error: duplicate borrowing
 
 proc B[a:&int, b:&int] do ...;
 
 proc C do
-	let a = 1 in
-		D[&a, &a];
+  let a = 1 in
+    D[&a, &a];
            ^ error: borrowing and passing ownership in the same call
 
 proc D[a:&int, take b:&int] do ...;
@@ -1981,17 +1981,17 @@ of type `&int` and swap it with the field `.Ref`:
 ```
 type T is {.Ref &int, .Value int}
 proc B[a:&T] do 
-	begin
-		let one = 1
-		let mine = &one
-		set a.Ref <-> mine
-	end
+  begin
+    let one = 1
+    let mine = &one
+    set a.Ref <-> mine
+  end
 ```
 
 In the previous example, since `mine` is owned by `B`, then the previous
 object pointed by `a.Ref` is now owned by `B`, and vice versa.
 
-The `..` and `..=` operators are also subject to moving semantics
+The `..` and `..=` operators are also subject to ownership semantics
 since they create a copy of the array:
 
 ```
@@ -2127,7 +2127,7 @@ proc F do
   end
 ```
 
-Slicing is subject to freeing and moving semantics,
+Slicing is subject to freeing and ownership semantics,
 when slicing an array that contains references,
 the remaining objects not contained in the slice are freed,
 since they are no longer used in the scope (they are not reachable).

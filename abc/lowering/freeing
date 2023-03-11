@@ -1,0 +1,78 @@
+type Box is {.Ref &int}
+
+proc A do
+begin
+    let c :&Box =
+		let a = 1, 
+            b = {:Box Ref = &a} # the ownership of 'a' is passed on, so no freeing happens here
+        in &b # the ownership of 'b' is also passed on, so no need to free it
+	F[c] # the ownership of 'c' is passed to 'F', so 'F' has the responsability to free it
+end
+
+proc F[take c:&Box] do
+	 nil; # indeed, 'c' is freed here, because it's no longer used
+
+proc B do
+begin
+    let c :&Box =
+		let a = 1,
+            b = {:Box Ref = &a}
+        in &b
+	G[c] # here, 'G' takes and passes ownership around, but since it's return
+	     # is discarded, 'c' is freed
+		 # in the IR, this may look like:
+		 #     call G, c -> t0
+		 #     free t0
+		 # we will need to assign it to a temp so we can free it
+end
+
+proc G[take c:&Box] &Box do c; # no freeing happens here, 'c' is passed on
+
+proc D do
+begin
+	let a = {0, 0, 0}, # 'a' and 'b' can be freed at the end of the 'in'
+		b = {1, 2, 3}  # expression, or be allocated in a stack:
+	in a.a + b.a +     #     ...
+	   a.b + b.b +     #     add a.c, b.c -> t0
+	   a.c + b.c;      #     free a
+	                   #     free b
+	# the key takeway is that lifetimes in anu are not bound to scopes
+	# variables may escape as their ownership is moved, and so the compiler
+	# cannot blindly allocate variables on the stack or heap, it needs
+	# escape analysis to determine where to allocate each object
+
+	# this distinction should only exist in the lowered IR, where we will
+	# be able to distinguish between allocators
+
+	# pool allocators can also be used for a few types, but this is a more
+	# complex optimization, since it needs to determine how much each size is going
+	# to be allocated
+
+	# first we will allocate everything on the heap, since it's easier to debug
+	# where the 'free's are placed, then, after the full compiler is working
+	# we will take the necessary steps to optimize memory usage
+
+	# NOTE: we don't need to perfectly infer the lifetimes, we just need to correctly
+	# insert the free instructions.
+
+	let a = 1          # alloc:int a
+		b :?&int = &a; # alloc:?&int b
+	                   # addrof a -> b
+
+	 set b = nil;      # if b != nil then
+	                   #     cast:&int b -> t0
+					   #     freeAddr t0
+	                   # copy nil -> b
+
+	# 'free' frees an object by name
+	# 'freeAddr' frees the object at the address
+	# so, for a variable 'b' of type '&int', 'free b' frees the pointer 'b'
+	# while 'freeAddr b' frees the object pointed by 'b'
+
+	# to detect if the free's are working correctly, we can insert code before the end
+	# of program execution to validate if all memory has been freed
+
+	# we can allocate everything in the heap, including booleans, ints and whatever,
+	# this will be slow at first, but escape analysis is an optimization phase
+	# and should not be strictly necessary for the compiler to work
+end
