@@ -517,8 +517,14 @@ func factor(l *lxr.Lexer) (*mod.Node, *Error) {
 		return productLit(l)
 	case lk.For:
 		return _for(l)
+	case lk.While:
+		return while(l)
+	case lk.Range:
+		return _range(l)
 	case lk.Switch:
 		return _switch(l)
+	case lk.Match:
+		return _match(l)
 	case lk.If:
 		return _if(l)
 	case lk.LeftParen:
@@ -613,37 +619,9 @@ func _else(l *lxr.Lexer) (*mod.Node, *Error) {
 	return kw, nil
 }
 
-// For = "for" (Conditional | Iterative | Range)
+// For = "for" id ("," id)? "in" Expr "do" Expr
 func _for(l *lxr.Lexer) (*mod.Node, *Error) {
 	kw, err := expect(l, lk.For)
-	if err != nil {
-		return nil, err
-	}
-	var body *mod.Node
-	switch l.Word.Kind {
-	case lk.Each:
-		body, err = iterative(l)
-		if err != nil {
-			return nil, err
-		}
-	case lk.Range:
-		body, err = ranged(l)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		body, err = conditional(l)
-		if err != nil {
-			return nil, err
-		}
-	}
-	kw.AddLeaf(body)
-	return kw, nil
-}
-
-// Iterative = "each" id ("," id)? "in" Expr "do" Expr
-func iterative(l *lxr.Lexer) (*mod.Node, *Error) {
-	_, err := expect(l, lk.Each)
 	if err != nil {
 		return nil, err
 	}
@@ -678,14 +656,16 @@ func iterative(l *lxr.Lexer) (*mod.Node, *Error) {
 	if err != nil {
 		return nil, err
 	}
-	return &mod.Node{
-		Leaves: []*mod.Node{firstId, secId, collection, res},
-		Kind:   nk.IterativeFor,
-	}, nil
+	kw.Leaves = []*mod.Node{firstId, secId, collection, res}
+	return kw, nil
 }
 
-// Conditional = Expr "do" Expr
-func conditional(l *lxr.Lexer) (*mod.Node, *Error) {
+// While = "while" Expr "do" Expr
+func while(l *lxr.Lexer) (*mod.Node, *Error) {
+	kw, err := expect(l, lk.While)
+	if err != nil {
+		return nil, err
+	}
 	cond, err := expectProd(l, expr, "expression")
 	if err != nil {
 		return nil, err
@@ -698,15 +678,13 @@ func conditional(l *lxr.Lexer) (*mod.Node, *Error) {
 	if err != nil {
 		return nil, err
 	}
-	return &mod.Node{
-		Leaves: []*mod.Node{cond, res},
-		Kind:   nk.ConditionalFor,
-	}, nil
+	kw.Leaves = []*mod.Node{cond, res}
+	return kw, nil
 }
 
 // Range = "range" Expr "to" Expr ("as" id)? "do" Expr
-func ranged(l *lxr.Lexer) (*mod.Node, *Error) {
-	_, err := expect(l, lk.Range)
+func _range(l *lxr.Lexer) (*mod.Node, *Error) {
+	kw, err := expect(l, lk.Range)
 	if err != nil {
 		return nil, err
 	}
@@ -741,38 +719,16 @@ func ranged(l *lxr.Lexer) (*mod.Node, *Error) {
 	if err != nil {
 		return nil, err
 	}
-	return &mod.Node{
-		Leaves: []*mod.Node{initial, target, as, res},
-		Kind:   nk.RangedFor,
-	}, nil
+	kw.Leaves = []*mod.Node{initial, target, as, res}
+	return kw, nil
 }
 
-// Switch = "switch" (TypeSwitch | ValueSwitch)
+// Switch = "switch" Expr ValueCase* Default?
 func _switch(l *lxr.Lexer) (*mod.Node, *Error) {
 	kw, err := expect(l, lk.Switch)
 	if err != nil {
 		return nil, err
 	}
-	var body *mod.Node
-	if l.Word.Kind == lk.Type {
-		body, err = typeSwitch(l)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		body, err = valueSwitch(l)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if body == nil {
-		return nil, newLexemeError(l, kw.Lexeme, ek.ExpectedProd, "expected switch body")
-	}
-	kw.AddLeaf(body)
-	return kw, nil
-}
-
-func valueSwitch(l *lxr.Lexer) (*mod.Node, *Error) {
 	cond, err := expectProd(l, expr, "expression")
 	if err != nil {
 		return nil, err
@@ -797,14 +753,11 @@ func valueSwitch(l *lxr.Lexer) (*mod.Node, *Error) {
 	}
 
 	if valueCaseList == nil && def == nil {
-		// better error upwards
-		return nil, nil
+		return nil, newLexemeError(l, kw.Lexeme, ek.ExpectedProd, "expected switch body")
 	}
 
-	return &mod.Node{
-		Leaves: []*mod.Node{cond, valueCaseList, def},
-		Kind:   nk.ValueSwitch,
-	}, nil
+	kw.Leaves = []*mod.Node{cond, valueCaseList, def}
+	return kw, nil
 }
 
 // ValueCase = "case" ExprList "then" Expr
@@ -836,9 +789,9 @@ func valueCase(l *lxr.Lexer) (*mod.Node, *Error) {
 	return kw, nil
 }
 
-// TypeSwitch = "type" Expr ("as" id) TypeCase* Default?
-func typeSwitch(l *lxr.Lexer) (*mod.Node, *Error) {
-	_, err := expect(l, lk.Type)
+// Match = "match" Expr ("as" id) TypeCase* Default?
+func _match(l *lxr.Lexer) (*mod.Node, *Error) {
+	kw, err := expect(l, lk.Match)
 	if err != nil {
 		return nil, err
 	}
@@ -876,13 +829,10 @@ func typeSwitch(l *lxr.Lexer) (*mod.Node, *Error) {
 		}
 	}
 	if typeCaseList == nil && def == nil {
-		// better error upwards
-		return nil, nil
+		return nil, newLexemeError(l, kw.Lexeme, ek.ExpectedProd, "expected match body")
 	}
-	return &mod.Node{
-		Leaves: []*mod.Node{cond, as, typeCaseList, def},
-		Kind:   nk.TypeSwitch,
-	}, nil
+	kw.Leaves = []*mod.Node{cond, as, typeCaseList, def}
+	return kw, nil
 }
 
 // TypeCase = "case" TypeExprList "then" Expr

@@ -46,18 +46,8 @@ func (this NodeKind) String() string {
 		return "type case list"
 	case TypeExprList:
 		return "type expression list"
-	case TypeSwitch:
-		return "type switch"
-	case ValueSwitch:
-		return "value switch"
 	case ValueCaseList:
 		return "value case switch"
-	case ConditionalFor:
-		return "conditional for"
-	case RangedFor:
-		return "ranged for"
-	case IterativeFor:
-		return "iterative for"
 	}
 	panic("you forgot")
 }
@@ -83,12 +73,8 @@ const (
 	LetDeclList
 	VarList
 	ElseIfList
-	TypeCaseList
 	TypeExprList
-	ValueSwitch
-	TypeSwitch
+
 	ValueCaseList
-	ConditionalFor
-	RangedFor
-	IterativeFor
+	TypeCaseList
 )

@@ -73,9 +73,10 @@ const (
 	Do
 	For
 	If
-	Each
+	While
 	In
 	Switch
+	Match
 	Case
 	Default
 	Elseif
@@ -165,9 +166,10 @@ var mapToString = map[LexKind]string{
 	Do:      "do",
 	For:     "for",
 	If:      "if",
-	Each:    "each",
+	While:   "while",
 	In:      "in",
 	Switch:  "switch",
+	Match:   "match",
 	Case:    "case",
 	Default: "default",
 	Elseif:  "elseif",

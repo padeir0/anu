@@ -10,8 +10,8 @@ type Type struct {
 	Structure *TypeStructure
 
 	// frontend stuff
-	Name          string
-	ProductFields map[string]int
+	Name   string
+	Fields map[string]int // used for both products and procedures
 }
 
 func (this *Type) String() string {
@@ -43,9 +43,14 @@ const (
 	Named     // [baseType] (named has structure)
 )
 
+type QualifiedType struct {
+	Take   bool // only for procedures
+	TypeID TypeID
+}
+
 type TypeStructure struct {
 	Kind      TypeKind
-	Structure []TypeID
+	Structure []QualifiedType
 	TagSize   int // for unions only
 	Size      int // computed on lowering phases
 }
@@ -53,7 +58,7 @@ type TypeStructure struct {
 func (this *TypeStructure) BaseType() TypeID {
 	switch this.Kind {
 	case Array, Reference, Option:
-		return this.Structure[0]
+		return this.Structure[0].TypeID
 	}
 	panic("BaseType is only valid for Arrays, References and Options")
 }
@@ -63,7 +68,11 @@ func (this *TypeStructure) BaseType() TypeID {
 func (this *TypeStructure) hash() int {
 	start := int(this.Kind)
 	for _, item := range this.Structure {
-		start = start ^ (int(item) * 31)
+		id := item.TypeID
+		start = start ^ (int(id) * 31)
+		if this.Kind == Proc && item.Take {
+			start = start ^ 11 // don't know :)
+		}
 	}
 	return start
 }
@@ -128,7 +137,14 @@ const (
 )
 
 func newBasicType(name string, id TypeID) *TypeWithName {
-	return &TypeWithName{Name: &QualifiedName{SymbolName: name}, TypeStructure: &TypeStructure{Kind: Basic, Structure: []TypeID{id}}}
+	return &TypeWithName{
+		Name: &QualifiedName{SymbolName: name},
+		TypeStructure: &TypeStructure{
+			Kind: Basic,
+			Structure: []QualifiedType{
+				{Take: false, TypeID: id},
+			}},
+	}
 }
 
 func NewTypeSpace() *TypeSpace {
@@ -210,7 +226,13 @@ func (this *TypeSpace) Named(name *QualifiedName) TypeID {
 func (this *TypeSpace) UpdateNamed(name *QualifiedName, id TypeID) {
 	v, ok := this.named[*name]
 	if ok {
-		this.allTypes[v] = &TypeWithName{name, &TypeStructure{Kind: Named, Structure: []TypeID{id}}}
+		ts := &TypeStructure{
+			Kind: Named,
+			Structure: []QualifiedType{
+				{Take: false, TypeID: id},
+			},
+		}
+		this.allTypes[v] = &TypeWithName{name, ts}
 	}
 	panic("Named type not found: " + name.String())
 }
@@ -264,7 +286,7 @@ func (this *TypeSpace) canonicalize(ts *TypeStructure) *TypeStructure {
 	case Product:
 		// a product with one field is equal to that field
 		if len(ts.Structure) == 1 {
-			id := ts.Structure[0]
+			id := ts.Structure[0].TypeID
 			return this.GetStructure(id)
 		}
 		// remove nils
@@ -276,8 +298,11 @@ func (this *TypeSpace) canonicalize(ts *TypeStructure) *TypeStructure {
 	case Option:
 		// turn into (T | nil)
 		a := &TypeStructure{
-			Kind:      Sum,
-			Structure: []TypeID{Nil, ts.Structure[0]},
+			Kind: Sum,
+			Structure: []QualifiedType{
+				{TypeID: Nil},
+				ts.Structure[0],
+			},
 		}
 		this.canonicalize(a) // orders the sum
 		return a
@@ -288,47 +313,50 @@ func (this *TypeSpace) canonicalize(ts *TypeStructure) *TypeStructure {
 	}
 }
 
-func remove(structure []TypeID, toRemove TypeID) []TypeID {
-	output := []TypeID{}
+func remove(structure []QualifiedType, toRemove TypeID) []QualifiedType {
+	output := []QualifiedType{}
 	for _, t := range structure {
-		if t != toRemove {
+		if t.TypeID != toRemove {
 			output = append(output, t)
 		}
 	}
 	return output
 }
 
-func removeDuplicates(structure []TypeID) []TypeID {
-	output := []TypeID{}
+func removeDuplicates(structure []QualifiedType) []QualifiedType {
+	output := []QualifiedType{}
 	for i, t := range structure {
-		if !isDup(t, structure[:i]) {
+		if !isDup(t.TypeID, structure[:i]) {
 			output = append(output, t)
 		}
 	}
 	return output
 }
 
-func isDup(t TypeID, others []TypeID) bool {
+func isDup(t TypeID, others []QualifiedType) bool {
 	for _, other := range others {
-		if other == t {
+		if other.TypeID == t {
 			return true
 		}
 	}
 	return false
 }
 
-func toInt(list []TypeID) []int {
+func toInt(list []QualifiedType) []int {
 	output := make([]int, len(list))
 	for i := range list {
-		output[i] = int(list[i])
+		output[i] = int(list[i].TypeID)
 	}
 	return output
 }
 
-func fromInt(list []int) []TypeID {
-	output := make([]TypeID, len(list))
+func fromInt(list []int) []QualifiedType {
+	output := make([]QualifiedType, len(list))
 	for i := range list {
-		output[i] = TypeID(list[i])
+		output[i] = QualifiedType{
+			Take:   false,
+			TypeID: TypeID(list[i]),
+		}
 	}
 	return output
 }

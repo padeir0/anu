@@ -50,3 +50,15 @@ func check(m *mod.Module, tspace *T.TypeSpace) *Error {
 
 	return nil
 }
+
+func checkProcExpressions(m *mod.Module, tspace *T.TypeSpace) *Error {
+	panic("unimplemented")
+}
+
+func inferGlobalSymbols(m *mod.Module, tspace *T.TypeSpace) *Error {
+	panic("unimplemented")
+}
+
+func createGlobalTypes(m *mod.Module, tspace *T.TypeSpace) *Error {
+	panic("unimplemented")
+}

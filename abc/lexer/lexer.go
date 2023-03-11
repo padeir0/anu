@@ -533,8 +533,10 @@ func identifier(st *Lexer) *lx.Lexeme {
 		tp = T.For
 	case "if":
 		tp = T.If
-	case "each":
-		tp = T.Each
+	case "while":
+		tp = T.While
+	case "match":
+		tp = T.Match
 	case "in":
 		tp = T.In
 	case "switch":

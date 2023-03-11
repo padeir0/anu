@@ -363,6 +363,16 @@ func resolveExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node, isCon
 				return errorInvalidConstExpr(M, n, "for loops")
 			}
 			return resolveForExpr(M, sy, scope, n)
+		case lk.While:
+			if isConst {
+				return errorInvalidConstExpr(M, n, "while loops")
+			}
+			return resolveWhileExpr(M, sy, scope, n)
+		case lk.Range:
+			if isConst {
+				return errorInvalidConstExpr(M, n, "range loops")
+			}
+			return resolveRangeExpr(M, sy, scope, n)
 		case lk.Return:
 			if isConst {
 				return errorInvalidConstExpr(M, n, "returns")
@@ -384,6 +394,11 @@ func resolveExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node, isCon
 				return errorInvalidConstExpr(M, n, "switches")
 			}
 			return resolveSwitchExpr(M, sy, scope, n)
+		case lk.Match:
+			if isConst {
+				return errorInvalidConstExpr(M, n, "switches")
+			}
+			return resolveMatchExpr(M, sy, scope, n)
 		}
 	case nk.CallOrIndex:
 		if isConst {
@@ -518,20 +533,7 @@ func resolveNewExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node, is
 	return nil
 }
 
-func resolveForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
-	body := n.Leaves[0]
-	switch body.Kind {
-	case nk.ConditionalFor:
-		return resolveCondForExpr(M, sy, scope, body)
-	case nk.IterativeFor:
-		return resolveIterForExpr(M, sy, scope, body)
-	case nk.RangedFor:
-		return resolveRangedForExpr(M, sy, scope, body)
-	}
-	panic("unreachable")
-}
-
-func resolveCondForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
+func resolveWhileExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
 	cond := n.Leaves[0]
 	err := resolveExpr(M, sy, scope, cond, false)
 	if err != nil {
@@ -542,9 +544,9 @@ func resolveCondForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node
 }
 
 // -0---v                                       v--1--v
-// proc A[array:*int] do for each index, item in array do ...;
-//       ^-----1----------------  ^----2----^             ^--2---
-func resolveIterForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
+// proc A[array:*int] do for index, item in array do ...;
+//       ^-----1------------ ^----2----^             ^--2---
+func resolveForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
 	collection := n.Leaves[2]
 	err := resolveExpr(M, sy, scope, collection, false)
 	if err != nil {
@@ -587,9 +589,9 @@ func resolveIterForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node
 }
 
 // -0---v
-// proc A[array:*int] do for range 0 to 10 as  i  do ...;
-//       ^----1--------------------------^   ^-2--------
-func resolveRangedForExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
+// proc A[array:*int] do range 0 to 10 as  i  do ...;
+//       ^----1----------------------^   ^-2--------
+func resolveRangeExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
 	initial := n.Leaves[0]
 	err := resolveExpr(M, sy, scope, initial, false)
 	if err != nil {
@@ -659,17 +661,6 @@ func resolveIfExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Er
 }
 
 func resolveSwitchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
-	body := n.Leaves[0]
-	switch body.Kind {
-	case nk.ValueSwitch:
-		return resolveValueSwitchExpr(M, sy, scope, body)
-	case nk.TypeSwitch:
-		return resolveTypeSwitchExpr(M, sy, scope, body)
-	}
-	panic("unreachable")
-}
-
-func resolveValueSwitchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
 	cond := n.Leaves[0]
 	err := resolveExpr(M, sy, scope, cond, false)
 	if err != nil {
@@ -702,9 +693,9 @@ func resolveValueSwitchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.
 	return nil
 }
 
-// -0---v v-------1-------------------v v-2-----------------
-// proc F [a:SomeSum] do switch type a as x case ... then ...
-func resolveTypeSwitchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
+// -0---v v-------1-------------v v-2-----------------
+// proc F [a:SomeSum] do match a as x case ... then ...
+func resolveMatchExpr(M *ir.Module, sy *ir.Symbol, scope *ir.Scope, n *ir.Node) *Error {
 	cond := n.Leaves[0]
 	err := resolveExpr(M, sy, scope, cond, false)
 	if err != nil {
