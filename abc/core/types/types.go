@@ -5,30 +5,8 @@ import (
 	"strconv"
 )
 
-type Type struct {
-	ID        TypeID
-	Structure *TypeStructure
-
-	// frontend stuff
-	Name   string
-	Fields map[string]int // used for both products and procedures
-}
-
-func (this *Type) String() string {
-	if this == nil {
-		return "nil"
-	}
-	if this.Name != "" {
-		return this.Name
-	}
-	return this.ID.String()
-}
-
 type TypeKind int
 
-// note that we don't need to take field names into consideration,
-// this is not useful for the user since if it wants two different
-// types to be different, he will declare a new type `type MyNewType is {whatever}`
 const (
 	InvalidTypeKind TypeKind = iota
 
@@ -48,14 +26,29 @@ type QualifiedType struct {
 	TypeID TypeID
 }
 
-type TypeStructure struct {
+type Type struct {
+	ID   TypeID
+	Name string
+
 	Kind      TypeKind
 	Structure []QualifiedType
-	TagSize   int // for unions only
-	Size      int // computed on lowering phases
+
+	Fields  map[string]int // for products and procedures
+	TagSize int            // for unions only
+	Size    int            // computed on lowering phases
 }
 
-func (this *TypeStructure) BaseType() TypeID {
+func (this *Type) String() string {
+	if this == nil {
+		return "nil"
+	}
+	if this.Name != "" {
+		return this.Name
+	}
+	return this.ID.String()
+}
+
+func (this *Type) BaseType() TypeID {
 	switch this.Kind {
 	case Array, Reference, Option:
 		return this.Structure[0].TypeID
@@ -63,9 +56,12 @@ func (this *TypeStructure) BaseType() TypeID {
 	panic("BaseType is only valid for Arrays, References and Options")
 }
 
-// must be canonicalized
-// this hash is not commutative
-func (this *TypeStructure) hash() int {
+// must be canonicalized since
+// this hash is not commutative,
+// note that we don't need to take field names into consideration,
+// this is not useful for the user since if it wants two different
+// types to be different, he will declare a new type `type MyNewType is {whatever}`
+func (this *Type) hash() int {
 	start := int(this.Kind)
 	for _, item := range this.Structure {
 		id := item.TypeID
@@ -78,7 +74,7 @@ func (this *TypeStructure) hash() int {
 }
 
 // both must be canonicalized
-func (this *TypeStructure) equals(other *TypeStructure) bool {
+func (this *Type) equals(other *Type) bool {
 	if this.Kind != other.Kind {
 		return false
 	}
@@ -139,11 +135,11 @@ const (
 func newBasicType(name string, id TypeID) *TypeWithName {
 	return &TypeWithName{
 		Name: &QualifiedName{SymbolName: name},
-		TypeStructure: &TypeStructure{
+		Type: &Type{
+			Name: name,
+			ID:   id,
 			Kind: Basic,
-			Structure: []QualifiedType{
-				{Take: false, TypeID: id},
-			}},
+		},
 	}
 }
 
@@ -180,8 +176,8 @@ func NewTypeSpace() *TypeSpace {
 }
 
 type TypeWithName struct {
-	Name          *QualifiedName
-	TypeStructure *TypeStructure
+	Name *QualifiedName
+	Type *Type
 }
 
 type QualifiedName struct {
@@ -217,7 +213,7 @@ func (this *TypeSpace) Named(name *QualifiedName) TypeID {
 	if ok {
 		return v
 	}
-	id := this.pushType(&TypeWithName{Name: name, TypeStructure: nil})
+	id := this.pushType(&TypeWithName{Name: name, Type: nil})
 	this.named[*name] = id
 	return id
 }
@@ -226,7 +222,7 @@ func (this *TypeSpace) Named(name *QualifiedName) TypeID {
 func (this *TypeSpace) UpdateNamed(name *QualifiedName, id TypeID) {
 	v, ok := this.named[*name]
 	if ok {
-		ts := &TypeStructure{
+		ts := &Type{
 			Kind: Named,
 			Structure: []QualifiedType{
 				{Take: false, TypeID: id},
@@ -237,7 +233,7 @@ func (this *TypeSpace) UpdateNamed(name *QualifiedName, id TypeID) {
 	panic("Named type not found: " + name.String())
 }
 
-func (this *TypeSpace) Unamed(ts *TypeStructure) TypeID {
+func (this *TypeSpace) Unamed(ts *Type) TypeID {
 	if ts.Kind == InvalidTypeKind {
 		panic("invalid type kind")
 	}
@@ -247,17 +243,17 @@ func (this *TypeSpace) Unamed(ts *TypeStructure) TypeID {
 		return id
 	}
 
-	id = this.pushType(&TypeWithName{Name: nil, TypeStructure: newTS})
+	id = this.pushType(&TypeWithName{Name: nil, Type: newTS})
 	this.tmap.Insert(newTS, id)
 
 	return id
 }
 
-func (this *TypeSpace) GetStructure(id TypeID) *TypeStructure {
+func (this *TypeSpace) GetStructure(id TypeID) *Type {
 	if id < 0 || int(id) >= len(this.allTypes) {
 		panic("Invalid TypeID: " + strconv.FormatInt(int64(id), 10))
 	}
-	return this.allTypes[id].TypeStructure
+	return this.allTypes[id].Type
 }
 
 func (this *TypeSpace) pushType(info *TypeWithName) TypeID {
@@ -270,7 +266,7 @@ func (this *TypeSpace) pushType(info *TypeWithName) TypeID {
 	return id
 }
 
-func (this *TypeSpace) canonicalize(ts *TypeStructure) *TypeStructure {
+func (this *TypeSpace) canonicalize(ts *Type) *Type {
 	switch ts.Kind {
 	case Sum:
 		// removes voids and duplicates
@@ -279,7 +275,7 @@ func (this *TypeSpace) canonicalize(ts *TypeStructure) *TypeStructure {
 		intslice := sort.IntSlice(toInt(nodup))
 		intslice.Sort()
 		newStruct := fromInt([]int(intslice))
-		return &TypeStructure{
+		return &Type{
 			Kind:      Sum,
 			Structure: newStruct,
 		}
@@ -291,13 +287,13 @@ func (this *TypeSpace) canonicalize(ts *TypeStructure) *TypeStructure {
 		}
 		// remove nils
 		newStruct := remove(ts.Structure, Nil)
-		return &TypeStructure{
+		return &Type{
 			Kind:      Product,
 			Structure: newStruct,
 		}
 	case Option:
 		// turn into (T | nil)
-		a := &TypeStructure{
+		a := &Type{
 			Kind: Sum,
 			Structure: []QualifiedType{
 				{TypeID: Nil},
@@ -377,7 +373,7 @@ type typemap struct {
 }
 
 // ts must be canonicalized
-func (this *typemap) Lookup(ts *TypeStructure) (TypeID, bool) {
+func (this *typemap) Lookup(ts *Type) (TypeID, bool) {
 	index := ts.hash() % len(this.buckets)
 	list := this.buckets[index]
 	if list == nil {
@@ -386,8 +382,8 @@ func (this *typemap) Lookup(ts *TypeStructure) (TypeID, bool) {
 
 	curr := list
 	for curr != nil {
-		if curr.TypeStructure.equals(ts) {
-			return curr.ID, true
+		if curr.Type.equals(ts) {
+			return curr.Type.ID, true
 		}
 		curr = curr.Next
 	}
@@ -396,7 +392,7 @@ func (this *typemap) Lookup(ts *TypeStructure) (TypeID, bool) {
 }
 
 // ts must be canonicalized
-func (this *typemap) Insert(ts *TypeStructure, id TypeID) {
+func (this *typemap) Insert(ts *Type, id TypeID) {
 	index := ts.hash() % len(this.buckets)
 	list := this.buckets[index]
 	if list == nil {
@@ -412,16 +408,13 @@ func (this *typemap) Insert(ts *TypeStructure, id TypeID) {
 }
 
 type typelist struct {
-	ID TypeID
-	// must be canonicalized
-	TypeStructure *TypeStructure
-	Next          *typelist
+	Type *Type // must be canonicalized
+	Next *typelist
 }
 
-func newtypelist(id TypeID, str *TypeStructure) *typelist {
+func newtypelist(id TypeID, str *Type) *typelist {
 	return &typelist{
-		ID:            id,
-		TypeStructure: str,
-		Next:          nil,
+		Type: str,
+		Next: nil,
 	}
 }

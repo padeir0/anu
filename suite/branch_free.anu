@@ -1,0 +1,25 @@
+proc main do
+	if a[true, false] != 1 then exit[2]
+
+proc a[one:bool, two:bool] int do
+	begin
+		let a = 1,
+			b = 2;
+
+		let c = if one then &a # free b
+		        else &b        # free a
+
+		# after this 'if' both a and b are not acessible, so
+		# we can safely free either of them, regardless
+
+		let a1 = 1,
+			b1 = 2;
+
+		let c1 = if one then &a1 # free b1
+		         else &b1        # free a1
+
+		let d = if two then c # free c1
+		        else c1       # free c
+
+		return @d
+	end

@@ -32,21 +32,46 @@ hir checking:
 
 uniqueness checking:
 	> Depth first search on the control flow graph,
-	performing abstract interpretation and annotating variables
-	with their respective lifetimes (Not exactly DFS because
+	performing abstract interpretation to check if
+	references are unique (Not exactly DFS because
 	loops will need a second pass through).
-	> Lifetimes will have a single alloc point and multiple free points
 	> Warn about unused variables
 
-lowering:
+free insertion:
+	> All instructions are queued and should be checked to avoid double frees
+	> Dangling references:
+		> Whenever theres an ArrayInsert, MapInsert, MapDelete, Slice, StoreRef or,
+		in general, modification of an object, check if the modification makes a reference
+		unreachable, then if it does, insert a free to dealocate that resource
+	> Owned but no longer used:
+		> Linear scan all basic blocks and create a table that has
+		per variable: the last invalidation per block and the last usage
+		index
+		> Then, for each possible path from start to the end of the procedure,
+		check which variables are still owned,
+		then backtrack to the last usage of each [owned] variable, check if blocks
+		reachable from this current block use it, if they use, go forward and check again,
+		on the path until there's a block where it's safe to free it (that particular variable).
+	> Discarded:
+		> maybe already covered by the above, but could be explicitly generated with a
+		discard variable or discard instruction:
+			call G -> _
+		or
+			call G -> t1
+			discard t1
 
+lowering:
+	> create procedures and data structures for maps and slices
+	> substitute MapInsert, MapLookup, MapDelete, Slice, MakeMap, MakeArray and other instructions
+	for their respective procedures and/or snipets of code
+	> operate only on basic types
 
 ```
      | file
-     v                                      typed                                                  hir +     
- --------------  module   ----------------  module   -----------------  hir  -------------------  lifetime   ------------  lir   ------------  mdir   ------------  fasm code  
- | resolution | --------> | typechecking | --------> | linearization | ----> | unique checking | ----------> | lowering | -----> | resalloc | ------> | fasm gen | ----------->
- --------------           ----------------           -----------------       -------------------             ------------        ------------         ------------             
+     v                                      typed                                                                           hir +
+ --------------  module   ----------------  module   -----------------  hir  -------------------  hir   ------------------  frees   ------------  lir   ------------  mdir   ------------  fasm code  
+ | resolution | --------> | typechecking | --------> | linearization | ----> | unique checking | -----> | free insertion | -------> | lowering | -----> | resalloc | ------> | fasm gen | ----------->
+ --------------           ----------------           -----------------       -------------------        ------------------          ------------        ------------         ------------             
   | file     ^     
   v      ast |     
  ------------------
